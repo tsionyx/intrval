@@ -1,0 +1,57 @@
+# The workflow is based on
+# https://github.com/actions-rs/meta/blob/master/recipes/security-audit.md
+name: Security audit
+
+on:
+  schedule:
+    # every 5th day
+    # https://crontab.guru/#0_0_1/5_*_*
+    - cron: '0 0 1/5 * *'
+  push:
+    paths:
+      - '**/Cargo.toml'
+      - '**/Cargo.lock'
+      - '**/audit.yml'
+  # https://docs.github.com/en/actions/using-workflows/manually-running-a-workflow
+  workflow_dispatch:
+
+
+env:
+  # https://corrode.dev/blog/tips-for-faster-ci-builds/
+  # Disable incremental compilation for faster from-scratch builds
+  CARGO_INCREMENTAL: 0
+  # Disable debug info for better caching
+  CARGO_PROFILE_TEST_DEBUG: 0
+
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+        with:
+          submodules: recursive
+
+      - name: Install toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+
+      - name: Setup caching
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: ""
+
+      - name: Install cargo-audit
+        uses: actions-rs/cargo@v1
+        with:
+          command: install
+          args: cargo-audit
+
+      - name: Run cargo audit
+        uses: actions-rs/cargo@v1
+        with:
+          command: audit
