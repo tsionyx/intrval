@@ -5,13 +5,38 @@ description = "Generic intervals (ranges) library"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/tsionyx/intrval"
 edition = "2021"
+keywords = ["interval", "bounds", "math", "no-std"]
+categories = ["science", "data-structures"]
 authors = []
 rust-version = "1.56"
 readme = "README.md"
 
 
-[dependencies]
+[dependencies.serde]
+version = "1.0.228"
+default-features = false
+features = ["derive"]
+optional = true
 
+[dependencies.proptest]
+version = "1.9"
+default-features = false
+features = ["std"]
+optional = true
+
+
+[dev-dependencies]
+serde_json = "1.0.140"
+
+
+[features]
+default = []
+
+# Could require some extra `Clone` bounds.
+# By default is disabled and emulated with `Interval::Closed((x, x))`.
+singleton = []
+serde = ["dep:serde"]
+arbitrary = ["dep:proptest"]
 
 
 [lints.rust]
