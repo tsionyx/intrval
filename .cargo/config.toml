@@ -1,0 +1,21 @@
+# Cargo configuration file
+# https://doc.rust-lang.org/cargo/reference/config.html#configuration-format
+
+[alias]
+# https://matklad.github.io/2018/01/03/make-your-own-make.html
+
+# TODO: add more aliases (e.g. `docker build`)
+# https://github.com/matklad/cargo-xtask/
+
+
+[profile.release]
+overflow-checks = true
+
+
+[build]
+# Define custom build settings here.
+#https://doc.rust-lang.org/rustc/codegen-options/index.html
+
+
+[env]
+# Define environment variables for the compile-time here.

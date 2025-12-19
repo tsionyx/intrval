@@ -1,0 +1,100 @@
+[package]
+name = "intrval"
+version = "0.0.1"
+description = "Generic intervals (ranges) library"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/tsionyx/intrval"
+edition = "2021"
+authors = []
+rust-version = "1.56"
+readme = "README.md"
+
+
+[dependencies]
+
+
+
+[lints.rust]
+# https://doc.rust-lang.org/nightly/cargo/reference/manifest.html#the-lints-section
+
+# do not warn on older Rust versions
+unknown_lints = "allow"
+
+# The following list was generated with the command:
+#   $ rustc -W help | grep ' allow ' | awk '{print $1}' | tr - _ | sort | xargs -I{} echo '{} = "warn"' | xclip -sel clip
+#
+# It is also available for the latest version of rustc at:
+#   https://doc.rust-lang.org/rustc/lints/listing/allowed-by-default.html
+absolute_paths_not_starting_with_crate = "warn"
+ambiguous_negative_literals = "warn"
+closure_returning_async_block = "warn"
+deprecated_in_future = "warn"
+deprecated_safe_2024 = { level = "warn", priority = -1 }
+# using new expr is Ok
+edition_2024_expr_fragment_specifier = "allow"
+elided_lifetimes_in_paths = "warn"
+explicit_outlives_requirements = "warn"
+ffi_unwind_calls = "warn"
+fuzzy_provenance_casts = "warn"
+if_let_rescope = "warn"
+impl_trait_overcaptures = "warn"
+impl_trait_redundant_captures = "warn"
+keyword_idents_2018 = "warn"
+keyword_idents_2024 = "warn"
+let_underscore_drop = "warn"
+lossy_provenance_casts = "warn"
+macro_use_extern_crate = "warn"
+meta_variable_misuse = "warn"
+missing_abi = "warn"
+missing_copy_implementations = "warn"
+missing_debug_implementations = "warn"
+missing_docs = "warn"
+missing_unsafe_on_extern = "warn"
+multiple_supertrait_upcastable = "warn"
+must_not_suspend = "warn"
+non_ascii_idents = "warn"
+non_exhaustive_omitted_patterns = "warn"
+non_local_definitions = "warn"
+redundant_imports = "warn"
+redundant_lifetimes = "warn"
+rust_2021_incompatible_closure_captures = "warn"
+rust_2021_incompatible_or_patterns = "warn"
+rust_2021_prefixes_incompatible_syntax = "warn"
+rust_2021_prelude_collisions = "warn"
+rust_2024_guarded_string_incompatible_syntax = "warn"
+rust_2024_incompatible_pat = "warn"
+rust_2024_prelude_collisions = "warn"
+single_use_lifetimes = "warn"
+tail_expr_drop_order = "warn"
+trivial_casts = "warn"
+trivial_numeric_casts = "warn"
+unit_bindings = "warn"
+unnameable_types = "warn"
+# conflicts with the `clippy::redundant_pub_crate`
+unreachable_pub = "allow"
+unsafe_attr_outside_unsafe = "warn"
+# NO UNSAFE
+unsafe_code = "forbid"
+unsafe_op_in_unsafe_fn = "warn"
+unstable_features = "warn"
+# TODO: "warn" after fixing false-positive detecting
+#  no usage of [dev-dependencies] that are used in examples
+#  https://github.com/rust-lang/rust/issues/95513
+unused_crate_dependencies = "allow"
+unused_extern_crates = "warn"
+unused_import_braces = "warn"
+unused_lifetimes = "warn"
+unused_macro_rules = "warn"
+unused_qualifications = "warn"
+unused_results = "warn"
+variant_size_differences = "warn"
+
+[lints.clippy]
+mem_forget = "deny"
+nursery = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+# suppress some pedantic warnings
+#must_use_candidate = "allow"
+#missing_panics_doc = "allow"
+#missing_errors_doc = "allow"
+#module_name_repetitions = "allow"
