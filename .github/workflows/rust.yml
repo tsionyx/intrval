@@ -99,6 +99,15 @@ jobs:
         with:
           cache-on-failure: ""
 
+      - name: Install cargo-hack
+        uses: taiki-e/install-action@cargo-hack
+
+      - name: Run check with all combinations of features
+        uses: actions-rs/cargo@v1
+        with:
+          command: hack
+          args: check --feature-powerset ${{ env.LOCKED }} --all-targets --workspace
+
       - name: Run cargo clippy
         uses: actions-rs/cargo@v1
         with:
@@ -161,14 +170,17 @@ jobs:
         with:
           cache-on-failure: ""
 
-      - name: Run cargo test
+      - name: Install cargo-hack
+        uses: taiki-e/install-action@cargo-hack
+
+      - name: Run tests with all combinations of features
         uses: actions-rs/cargo@v1
         with:
-          command: test
-          args: ${{ env.LOCKED }} --all-targets --all-features --workspace
+          command: hack
+          args: test --feature-powerset ${{ env.LOCKED }} --all-targets --workspace
 
-      # - name: Run cargo test (ignored)
+      # - name: Run tests (ignored) with all combinations of features
       #   uses: actions-rs/cargo@v1
       #   with:
-      #     command: test
-      #     args: ${{ env.LOCKED }} --all-targets --all-features --workspace -- --ignored
+      #     command: hack
+      #     args: test --feature-powerset ${{ env.LOCKED }} --all-targets --workspace -- --ignored

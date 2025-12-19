@@ -11,7 +11,25 @@ readme = "README.md"
 
 
 [dependencies]
+serde = { version = "1.0.228", optional = true, features = ["derive"] }
+num-traits = { version = "0.2.19", optional = true }
+proptest = { version = "1.9", optional = true }
 
+
+[dev-dependencies]
+serde_json = "1.0.140"
+
+
+[features]
+default = []
+
+# Could require some extra `Clone` bounds.
+# By default is disabled and emulated with `Interval::Closed((x, x))`.
+singleton = []
+
+serde = ["dep:serde"]
+num-traits = ["dep:num-traits"]
+arbitrary = ["dep:proptest"]
 
 
 [lints.rust]
