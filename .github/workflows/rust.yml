@@ -1,0 +1,186 @@
+# The workflow is based on
+# https://github.com/actions-rs/meta/blob/master/recipes/matrix.md
+name: Rust CI
+
+on:
+  push:
+    branches:
+      - master
+      - dev
+      - release/*
+    #branches-ignore: [ 'temp/*' ]
+  pull_request:
+    branches: [ master ]
+  # https://docs.github.com/en/actions/using-workflows/manually-running-a-workflow
+  workflow_dispatch:
+
+env:
+  RUST_VERSIONS_PULL_REQUEST: "['1.56.0','stable','beta']"
+  RUST_VERSIONS_RELEASE: "['stable']"
+  APT_DEPENDENCIES: "[]"
+
+  # https://corrode.dev/blog/tips-for-faster-ci-builds/
+  # Disable incremental compilation for faster from-scratch builds
+  CARGO_INCREMENTAL: 0
+  # Disable debug info for better caching
+  CARGO_PROFILE_TEST_DEBUG: 0
+  # Deny warnings
+  RUSTFLAGS: -D warnings
+  # Enable when the Cargo.lock is included in the repository
+  # LOCKED: "--locked"
+
+
+jobs:
+  get-info:
+    name: Get env vars and git info
+    runs-on: ubuntu-latest
+    outputs:
+      # Map a step output to a job output
+      # https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/passing-information-between-jobs
+      RUST_VERSIONS: ${{ steps.branch-name.outputs.RUST_VERSIONS }}
+      APT_DEPENDENCIES: ${{ env.APT_DEPENDENCIES }}
+      SHA_SHORT: ${{ steps.sha-short.outputs.SHA_SHORT }}
+      BRANCH_NAME: ${{ steps.branch-name.outputs.BRANCH_NAME }}
+    steps:
+      - name: Get abbreviated SHA hash of the commit
+        id: sha-short
+        shell: bash
+        run: |
+          echo "SHA_SHORT=$(echo ${{ github.event.pull_request.head.sha || github.sha }} | cut -c1-7)" >> "$GITHUB_OUTPUT"
+
+      - name: Get branch name
+        id: branch-name
+        # BRANCH_NAME="${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}"
+        run: |
+          if [ ${{ github.event_name }} == 'pull_request' ]; then
+            echo "RUST_VERSIONS=${{ env.RUST_VERSIONS_PULL_REQUEST }}" >> $GITHUB_OUTPUT
+            echo "BRANCH_NAME=${{ github.head_ref }}" >> $GITHUB_OUTPUT
+          else
+            echo "RUST_VERSIONS=${{ env.RUST_VERSIONS_RELEASE }}" >> $GITHUB_OUTPUT
+            echo "BRANCH_NAME=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          fi
+
+  static:
+    name: Static analysis with `rustfmt` and `clippy` on rust '${{ matrix.rust }}'
+    runs-on: ubuntu-latest
+    needs: [ get-info ]
+    strategy:
+      matrix:
+        # https://github.com/orgs/community/discussions/46785#discussioncomment-4909718
+        # https://github.com/actions/runner/issues/2372#issuecomment-1591370444
+        rust: ${{ fromJSON(needs.get-info.outputs.RUST_VERSIONS) }}
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+        with:
+          submodules: recursive
+
+      - name: Install toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+          profile: minimal
+          components: rustfmt, clippy
+          override: true
+
+      - name: Run cargo fmt
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all -- --check
+
+      - name: Install deps
+        # https://github.com/orgs/community/discussions/27125#discussioncomment-3254720
+        if: ${{ fromJSON(needs.get-info.outputs.APT_DEPENDENCIES)[0] != null }}
+        run: sudo apt-get -y install ${{ join(fromJSON(needs.get-info.outputs.APT_DEPENDENCIES), ' ') }}
+
+      - name: Setup caching
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: ""
+
+      - name: Install cargo-hack
+        uses: taiki-e/install-action@cargo-hack
+
+      - name: Run check with all combinations of features
+        uses: actions-rs/cargo@v1
+        with:
+          command: hack
+          args: check --feature-powerset ${{ env.LOCKED }} --all-targets --workspace
+
+      - name: Run cargo clippy
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: ${{ env.LOCKED }} --all-targets --workspace
+
+      - name: Run cargo clippy with all features
+        uses: actions-rs/cargo@v1
+        #uses: actions-rs/clippy-check@v1  # TODO: annotating does not work: "Error: Resource not accessible by integration"
+        with:
+          command: clippy
+          #token: ${{ secrets.GITHUB_TOKEN }}
+          args: ${{ env.LOCKED }} --all-targets --all-features --workspace
+
+      - name: Check docs
+        env:
+          RUSTDOCFLAGS: '-D warnings'
+        uses: actions-rs/cargo@v1
+        with:
+          command: doc
+          args: --workspace --lib --bins --examples --no-deps
+
+      - name: Check docs with all features
+        env:
+          RUSTDOCFLAGS: '-D warnings'
+        uses: actions-rs/cargo@v1
+        with:
+          command: doc
+          args: --workspace --lib --bins --examples --all-features --no-deps
+
+
+  test:
+    name: Test Suite on rust '${{ matrix.rust }}'
+
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [ get-info, static ]
+
+    strategy:
+      matrix:
+        rust: ${{ fromJSON(needs.get-info.outputs.RUST_VERSIONS) }}
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+        with:
+          submodules: recursive
+
+      - name: Install deps
+        if: ${{ fromJSON(needs.get-info.outputs.APT_DEPENDENCIES)[0] != null }}
+        run: sudo apt-get -y install ${{ join(fromJSON(needs.get-info.outputs.APT_DEPENDENCIES), ' ') }}
+
+      - name: Install toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+          override: true
+
+      - name: Setup caching
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: ""
+
+      - name: Install cargo-hack
+        uses: taiki-e/install-action@cargo-hack
+
+      - name: Run tests with all combinations of features
+        uses: actions-rs/cargo@v1
+        with:
+          command: hack
+          args: test --feature-powerset ${{ env.LOCKED }} --all-targets --workspace
+
+      # - name: Run tests (ignored) with all combinations of features
+      #   uses: actions-rs/cargo@v1
+      #   with:
+      #     command: hack
+      #     args: test --feature-powerset ${{ env.LOCKED }} --all-targets --workspace -- --ignored
