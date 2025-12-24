@@ -1,9 +1,9 @@
 use core::ops::{
-    Add, Bound, Neg, Not, Range, RangeBounds, RangeFrom, RangeFull, RangeInclusive, RangeTo,
+    Add, Bound, Mul, Neg, Not, Range, RangeBounds, RangeFrom, RangeFull, RangeInclusive, RangeTo,
     RangeToInclusive, Sub,
 };
 
-use crate::{sided::sided_bounds, Interval, IntoBounds, OneOrPair, Pair};
+use crate::{sided::sided_bounds, Interval, IntoBounds, OneOrPair, Pair, Scalar, Zero};
 
 impl<T> From<RangeFull> for Interval<T> {
     fn from(_: RangeFull) -> Self {
@@ -109,97 +109,73 @@ impl<T: Neg<Output = T>> Neg for Interval<T> {
     type Output = Self;
 
     fn neg(self) -> Self::Output {
-        match self {
-            Self::Empty => Self::Empty,
-            Self::LessThan(x) => Self::GreaterThan(-x),
-            Self::LessThanOrEqual(x) => Self::GreaterThanOrEqual(-x),
-            #[cfg(feature = "singleton")]
-            Self::Singleton(x) => Self::Singleton(-x),
-            Self::GreaterThanOrEqual(x) => Self::LessThanOrEqual(-x),
-            Self::GreaterThan(x) => Self::LessThan(-x),
-            Self::Open((a, b)) => Self::Open((-b, -a)),
-            Self::LeftOpen((a, b)) => Self::RightOpen((-b, -a)),
-            Self::RightOpen((a, b)) => Self::LeftOpen((-b, -a)),
-            Self::Closed((a, b)) => Self::Closed((-b, -a)),
-            Self::Full => Self::Full,
+        self.reverse().map(Neg::neg)
+    }
+}
+
+impl<T, N, Z> Mul<N> for Interval<T>
+where
+    N: Clone + Scalar + Zero,
+    T: Mul<N, Output = Z>,
+{
+    type Output = Interval<Z>;
+
+    fn mul(self, rhs: N) -> Self::Output {
+        // Do not simply return `Interval::Empty` on `self.is_empty()`
+        // to preserve a (possibly erroneous) structure of the `Interval`,
+        // e.g. `[a+1, a) * 2 = [2*a+2, 2*a)`, not a simple `∅`.
+        //
+        let product = self.map(|x| x * rhs.clone());
+
+        // if the interval changed its "direction",
+        // e.g. `[3, 5] * -1 = [-3, -5]`, we have to reverse it (without changing the signs)
+        if rhs.cmp_zero() == Some(std::cmp::Ordering::Less) {
+            product.reverse()
+        } else {
+            product
         }
     }
 }
 
-#[cfg(feature = "num-traits")]
-mod mul_impl {
-    use core::ops::Mul;
-
-    use num_traits::Signed;
-
-    use super::{Bound, Interval, IntoBounds, Neg, Pair};
-
-    impl<T, N, Z> Mul<N> for Interval<T>
+impl<T> Interval<T> {
+    /// Auxiliary function to help with multiplying two [`Intervals`].
+    fn mul_bound<N, Z>(self, rhs: Bound<N>) -> Interval<Z>
     where
-        N: Signed,
-        T: Mul<N, Output = Z>,
-        Z: Neg<Output = Z>,
+        Self: Mul<N, Output = Interval<Z>>,
     {
-        type Output = Interval<Z>;
-
-        fn mul(self, rhs: N) -> Self::Output {
-            let abs = self.map(|x| x * rhs.abs());
-            if rhs.is_negative() {
-                -abs
-            } else {
-                abs
-            }
+        match rhs {
+            Bound::Included(n) => self * n,
+            Bound::Excluded(n) => (self * n).into_interior(),
+            Bound::Unbounded => Interval::Full,
         }
     }
+}
 
-    impl<T> Interval<T> {
-        /// Auxiliary function to help with multiplying two [`Intervals`].
-        fn mul_bound<N, Z>(self, rhs: Bound<N>) -> Interval<Z>
-        where
-            Self: Mul<N, Output = Interval<Z>>,
-        {
-            match rhs {
-                Bound::Included(n) => self * n,
-                Bound::Excluded(n) => (self * n).into_interior(),
-                Bound::Unbounded => Interval::Full,
-            }
+impl<T, N, Z> Mul<Interval<N>> for Interval<T>
+where
+    N: PartialOrd,
+    Interval<N>: IntoBounds<N>,
+    T: Clone + PartialOrd + Mul<N, Output = Z>,
+    Self: Mul<N, Output = Interval<Z>>,
+    Z: Ord,
+    Interval<Z>: IntoBounds<Z>,
+{
+    type Output = Interval<Z>;
+
+    fn mul(self, rhs: Interval<N>) -> Self::Output {
+        if self.is_empty() || rhs.is_empty() {
+            return Interval::Empty;
         }
-    }
 
-    // TODO: tests
-    // (-2, 3] * [-4, 5) == [-12, 15)
-    // (-2, 3] * -4 => [-12, 8)
-    // (-2, 3] * 5) => (-10, 15)  => [-12, 15)
-    // [-4, 5) * (-2 => (-10, 8)
-    // [-4, 5) * 3 => [-12, 15]
-
-    impl<T, N, Z> Mul<Interval<N>> for Interval<T>
-    where
-        // TODO: remove `PartialOrd` bounds by preventing `empty` case
-        T: Clone + PartialOrd + Mul<N, Output = Z>,
-        N: PartialOrd + Signed,
-        Interval<N>: IntoBounds<N>,
-        Z: Ord + Neg<Output = Z>,
-        Interval<Z>: IntoBounds<Z>,
-        // Self: Mul<N, Output = Interval<Z>>,
-    {
-        type Output = Interval<Z>;
-
-        fn mul(self, rhs: Interval<N>) -> Self::Output {
-            if self.is_empty() || rhs.is_empty() {
-                return Interval::Empty;
-            }
-
-            if self.is_full() || rhs.is_full() {
-                return Interval::Full;
-            }
-
-            let (rhs_start, rhs_end): Pair<Bound<N>> = rhs.into_bounds();
-
-            let left = self.clone().mul_bound(rhs_start);
-            let right = self.mul_bound(rhs_end);
-            left.enclosure(right).into()
+        if self.is_full() || rhs.is_full() {
+            return Interval::Full;
         }
+
+        let (rhs_start, rhs_end): Pair<Bound<N>> = rhs.into_bounds();
+
+        let left = self.clone().mul_bound(rhs_start);
+        let right = self.mul_bound(rhs_end);
+        left.enclosure(right).into()
     }
 }
 
@@ -453,5 +429,94 @@ mod ops_tests {
 
         let i = !interval!(..: f64);
         assert_eq!(i, OneOrPair::One(interval!(_)));
+    }
+}
+
+#[cfg(test)]
+mod mul_tests {
+    use crate::interval;
+
+    use super::*;
+
+    #[test]
+    fn mul_by_positive_scalar() {
+        assert_eq!(interval!(_: u8) * 100, interval!(_));
+        assert_eq!(interval!(< -2) * 5, interval!(< -10));
+        assert_eq!(interval!((2, 3)) * 2, interval!((4, 6)));
+        assert_eq!(interval!([5.0, 11.0]) * 3.5, interval!([17.5, 38.5]));
+        assert_eq!(interval!(..: u8) * 100, interval!(..));
+    }
+
+    #[test]
+    fn mul_invalid_preserves_structure() {
+        assert_eq!(interval!((=4, 3)) * 2, interval!((=8, 6)));
+        assert_eq!(interval!([10, -5]) * 6, interval!([60, -30]));
+        assert_eq!(interval!([10, -5]) * -6, interval!([30, -60]));
+    }
+
+    #[test]
+    fn mul_by_negative_scalar() {
+        assert_eq!(interval!(_: i8) * -100, interval!(_));
+        assert_eq!(interval!(>= 13) * -2, interval!(<= -26));
+        assert_eq!(interval!((-2, 3)) * -2, interval!((-6, 4)));
+        assert_eq!(interval!([5.0, 11.0]) * -3.5, interval!([-38.5, -17.5]));
+        assert_eq!(interval!(..: i8) * -100, interval!(..));
+    }
+
+    #[test]
+    #[allow(clippy::erasing_op)]
+    fn mul_by_zero() {
+        assert_eq!(interval!(_: u8) * 0, interval!(_));
+        assert_eq!(interval!(< -2) * 0, interval!(< 0));
+        assert_eq!(interval!((2, 3)) * 0, interval!((0, 0)));
+        assert_eq!(interval!([5.0, 11.0]) * 0.0, interval!([0.0, 0.0]));
+        assert_eq!(interval!(..: u8) * 0, interval!(_));
+    }
+
+    #[test]
+    #[allow(clippy::erasing_op)]
+    fn two_zero_based() {
+        let r1 = interval!(< 0);
+        let r2 = interval!((0, =1));
+
+        assert_eq!(r1 * 0, interval!(< 0));
+        assert_eq!(r1 * 1, interval!(< 0));
+        assert_eq!(r1 * r2, interval!(< 0));
+
+        assert_eq!(r2 * 0, interval!(< 0));
+        assert_eq!(r2 * r1, interval!(< 0));
+    }
+
+    #[test]
+    fn two_intervals() {
+        let ((a, b), (c, d)) = ((-2, 3), (-4, 5));
+
+        assert_eq!(interval!((a, =b)) * c, interval!((= -12, 8)));
+        assert_eq!(interval!((a, =b)) * d, interval!((-10, =15)));
+        assert_eq!(interval!((=c, d)) * a, interval!((-10, =8)));
+        assert_eq!(interval!((=c, d)) * b, interval!((= -12, 15)));
+
+        assert_eq!(
+            interval!((a, =b)).mul_bound(Bound::Included(c)),
+            interval!((= -12, 8))
+        );
+        assert_eq!(
+            interval!((a, =b)).mul_bound(Bound::Excluded(d)),
+            interval!((-10, 15))
+        );
+
+        assert_eq!(
+            interval!((=c, d)).mul_bound(Bound::Excluded(a)),
+            interval!((-10, 8))
+        );
+        assert_eq!(
+            interval!((=c, d)).mul_bound(Bound::Included(b)),
+            interval!((= -12, 15))
+        );
+
+        assert_eq!(
+            interval!((a, =b)) * interval!((=c, d)),
+            interval!((= -12, 15))
+        );
     }
 }

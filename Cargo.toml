@@ -12,7 +12,6 @@ readme = "README.md"
 
 [dependencies]
 serde = { version = "1.0.228", optional = true, features = ["derive"] }
-num-traits = { version = "0.2.19", optional = true }
 proptest = { version = "1.9", optional = true }
 
 
@@ -28,7 +27,6 @@ default = []
 singleton = []
 
 serde = ["dep:serde"]
-num-traits = ["dep:num-traits"]
 arbitrary = ["dep:proptest"]
 
 

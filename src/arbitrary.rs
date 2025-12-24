@@ -136,6 +136,11 @@ mod prop_test {
         (-PARAM_BOUND..=PARAM_BOUND).boxed()
     }
 
+    fn mul_range() -> Interval<Int> {
+        #[allow(trivial_numeric_casts)]
+        (-11 as Int..=11).into()
+    }
+
     // consider the `PARAM_BOUND` to prevent any case of addition overflow
     fn no_addition_overflow_interval() -> Bounded<Int> {
         let min = Int::MIN + PARAM_BOUND;
@@ -228,7 +233,6 @@ mod prop_test {
         }
     }
 
-    #[cfg(feature = "num-traits")]
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(8000))]
 
@@ -260,6 +264,15 @@ mod prop_test {
             let full = interval!(..: Int);
             prop_assert_eq!(full * factor, full);
         }
+
+        #[test]
+        fn commutative_mul(
+            range1 in Bounded::arbitrary_with(mul_range().into()),
+            range2 in Bounded::arbitrary_with(mul_range().into())
+        ) {
+            let (left, right) = (range1.0, range2.0);
+            prop_assert_eq!(left * right, right * left);
+        }
     }
 
     proptest! {
@@ -286,6 +299,17 @@ mod prop_test {
             }
 
             prop_assert_eq!(range, restored);
+        }
+
+        #[test]
+        fn reversed_has_the_bounds_swapped(range: Interval<Int>) {
+            use crate::IntoBounds as _;
+
+            let (start, end) = range.into_bounds();
+            let (rev_start, rev_end) = range.reverse().into_bounds();
+
+            prop_assert_eq!(start, rev_end);
+            prop_assert_eq!(end, rev_start);
         }
 
         #[test]

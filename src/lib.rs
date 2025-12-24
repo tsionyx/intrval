@@ -129,6 +129,25 @@ impl<T> Interval<T> {
     }
 
     #[must_use = "this method consume the Interval and return a new one"]
+    /// Swap the [`Interval`]'s bounds.
+    pub fn reverse(self) -> Self {
+        match self {
+            Self::Empty => Self::Empty,
+            Self::LessThan(x) => Self::GreaterThan(x),
+            Self::LessThanOrEqual(x) => Self::GreaterThanOrEqual(x),
+            #[cfg(feature = "singleton")]
+            Self::Singleton(x) => Self::Singleton(x),
+            Self::GreaterThanOrEqual(x) => Self::LessThanOrEqual(x),
+            Self::GreaterThan(x) => Self::LessThan(x),
+            Self::Open((a, b)) => Self::Open((b, a)),
+            Self::LeftOpen((a, b)) => Self::RightOpen((b, a)),
+            Self::RightOpen((a, b)) => Self::LeftOpen((b, a)),
+            Self::Closed((a, b)) => Self::Closed((b, a)),
+            Self::Full => Self::Full,
+        }
+    }
+
+    #[must_use = "this method consume the Interval and return a new one"]
     /// Transform the given [`Interval`] into a _closed_ one
     /// by _*augmenting*_ it with its endpoints.
     pub fn into_closure(self) -> Self {
