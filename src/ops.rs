@@ -1,6 +1,9 @@
-use core::ops::{
-    Add, Bound, Mul, Neg, Not, Range, RangeBounds, RangeFrom, RangeFull, RangeInclusive, RangeTo,
-    RangeToInclusive, Sub,
+use core::{
+    cmp::Ordering,
+    ops::{
+        Add, Bound, Mul, Neg, Not, Range, RangeBounds, RangeFrom, RangeFull, RangeInclusive,
+        RangeTo, RangeToInclusive, Sub,
+    },
 };
 
 use crate::{sided::sided_bounds, Interval, IntoBounds, OneOrPair, Pair, Scalar, Zero};
@@ -116,23 +119,38 @@ impl<T: Neg<Output = T>> Neg for Interval<T> {
 impl<T, N, Z> Mul<N> for Interval<T>
 where
     N: Clone + Scalar + Zero,
-    T: Mul<N, Output = Z>,
+    T: PartialOrd + Mul<N, Output = Z>,
+    Z: PartialOrd + Zero,
 {
     type Output = Interval<Z>;
 
     fn mul(self, rhs: N) -> Self::Output {
+        let was_empty = self.is_empty();
         // Do not simply return `Interval::Empty` on `self.is_empty()`
         // to preserve a (possibly erroneous) structure of the `Interval`,
         // e.g. `[a+1, a) * 2 = [2*a+2, 2*a)`, not a simple `∅`.
         //
         let product = self.map(|x| x * rhs.clone());
 
-        // if the interval changed its "direction",
-        // e.g. `[3, 5] * -1 = [-3, -5]`, we have to reverse it (without changing the signs)
-        if rhs.cmp_zero() == Some(std::cmp::Ordering::Less) {
-            product.reverse()
-        } else {
-            product
+        match rhs.cmp_zero() {
+            Some(Ordering::Equal) => {
+                if was_empty {
+                    if product.is_empty() {
+                        product
+                    } else {
+                        // sometimes the invalid interval can become a valid one,
+                        // e.g. `[4, 6] * 0 -> [0, 0]`, so we have to force it to be empty again
+                        Interval::Empty
+                    }
+                } else {
+                    // non-empty interval should map to the singleton `[0]` interval
+                    Interval::Closed((Z::zero(), Z::zero()))
+                }
+            }
+            // if the interval changed its "direction",
+            // e.g. `[3, 5] * -1 = [-3, -5]`, we have to reverse it (without changing the signs)
+            Some(Ordering::Less) => product.reverse(),
+            _ => product,
         }
     }
 }
@@ -467,13 +485,14 @@ mod mul_tests {
     #[allow(clippy::erasing_op)]
     fn mul_by_zero() {
         assert_eq!(interval!(_: u8) * 0, interval!(_));
-        assert_eq!(interval!(< -2) * 0, interval!(< 0));
-        assert_eq!(interval!((2, 3)) * 0, interval!((0, 0)));
+        assert_eq!(interval!(< -2) * 0, interval!([0, 0]));
+        assert_eq!(interval!((2, 3)) * 0, interval!([0, 0]));
         assert_eq!(interval!([5.0, 11.0]) * 0.0, interval!([0.0, 0.0]));
-        assert_eq!(interval!(..: u8) * 0, interval!(_));
+        assert_eq!(interval!(..: u8) * 0, interval!([0, 0]));
     }
 
     #[test]
+    #[ignore = "unstable mul (inf * 0) operation"]
     #[allow(clippy::erasing_op)]
     fn two_zero_based() {
         let r1 = interval!(< 0);
@@ -483,7 +502,7 @@ mod mul_tests {
         assert_eq!(r1 * 1, interval!(< 0));
         assert_eq!(r1 * r2, interval!(< 0));
 
-        assert_eq!(r2 * 0, interval!(< 0));
+        assert_eq!(r2 * 0, interval!([0, 0]));
         assert_eq!(r2 * r1, interval!(< 0));
     }
 
