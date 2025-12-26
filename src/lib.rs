@@ -8,6 +8,7 @@ use core::{
 #[cfg(feature = "arbitrary")]
 mod arbitrary;
 mod bounds;
+mod ext;
 mod helper;
 mod ops;
 pub(crate) mod sided;
@@ -21,6 +22,7 @@ use self::helper::Pair;
 
 pub use self::{
     bounds::IntoBounds,
+    ext::{ExtNum, IndeterminanceReason},
     helper::{OneOrPair, Scalar, Zero},
     singleton::Singleton,
 };
