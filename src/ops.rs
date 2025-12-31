@@ -7,10 +7,9 @@ use core::{
 };
 
 use crate::{
-    bounds::{sided_bounds, SidedBound, LEFT, RIGHT},
+    bounds::{Bounded, Endpoint, LEFT, RIGHT},
     helper::map_pair,
-    singleton::SingletonBounds,
-    Bounded, Interval, OneOrPair, Pair, Zero,
+    Interval, OneOrPair, Zero,
 };
 
 impl<T> From<RangeFull> for Interval<T> {
@@ -52,11 +51,15 @@ impl<T> From<RangeToInclusive<T>> for Interval<T> {
 #[allow(clippy::match_same_arms)]
 impl<T> RangeBounds<T> for Interval<T> {
     fn start_bound(&self) -> Bound<&T> {
-        self.as_ref().into_bounds().0
+        self.as_ref()
+            .into_bounds()
+            .map_or(Bound::Unbounded, |(a, _b)| a.into_bound())
     }
 
     fn end_bound(&self) -> Bound<&T> {
-        self.as_ref().into_bounds().1
+        self.as_ref()
+            .into_bounds()
+            .map_or(Bound::Unbounded, |(_a, b)| b.into_bound())
     }
 
     fn contains<U>(&self, item: &U) -> bool
@@ -75,8 +78,17 @@ impl<T: PartialOrd> Interval<T> {
     where
         R: for<'a> Bounded<&'a T>,
     {
-        let (self_start, self_end) = sided_bounds(self.as_ref());
-        let (other_start, other_end) = sided_bounds(other);
+        let Ok((other_start, other_end)) = other.into_bounds() else {
+            // the empty interval is contained in any interval
+            return true;
+        };
+
+        let Ok((self_start, self_end)) = self.as_ref().into_bounds() else {
+            // no interval can be inside an empty interval
+            // (except the empty one, which is handled above)
+            return false;
+        };
+
         self_start <= other_start && self_end >= other_end
     }
 
@@ -86,11 +98,9 @@ impl<T: PartialOrd> Interval<T> {
     fn point_cmp(&self, point: &T) -> Option<Ordering> {
         use Ordering::{Equal, Greater, Less};
 
-        if self.is_empty() {
+        let Ok((start, end)) = self.as_ref().into_bounds() else {
             return None;
-        }
-
-        let (start, end) = sided_bounds(self.as_ref());
+        };
 
         match (start.partial_cmp(&point)?, end.partial_cmp(&point)?) {
             (Less, Less | Equal) | (Equal, Less) => Some(Less),
@@ -98,15 +108,6 @@ impl<T: PartialOrd> Interval<T> {
             (Equal, Greater) | (Greater, Equal | Greater) => Some(Greater),
             (Less, Greater) | (Greater, Less) => None,
         }
-    }
-}
-
-impl<T> From<Pair<Bound<T>>> for Interval<T>
-where
-    Self: Bounded<T>,
-{
-    fn from(bounds: Pair<Bound<T>>) -> Self {
-        Self::from_bounds(bounds)
     }
 }
 
@@ -158,7 +159,7 @@ where
                         product
                     } else {
                         // sometimes the invalid interval can become a valid one,
-                        // e.g. `[4, 6] * 0 -> [0, 0]`, so we have to force it to be empty again
+                        // e.g. `[2, 1] * 0 -> [0, 0]`, so we have to force it to be empty again
                         Interval::Empty
                     }
                 } else {
@@ -181,18 +182,18 @@ enum Prioritized<T> {
     Normal(T),
 }
 
-impl<const SIDE: bool, T: PartialOrd> PartialOrd for Prioritized<SidedBound<SIDE, T>> {
+impl<const SIDE: bool, T: PartialOrd> PartialOrd for Prioritized<Endpoint<SIDE, T>> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        let normal_with_low = SidedBound::<SIDE, T>::inf_ordering();
-        let low_with_normal = normal_with_low.reverse();
+        let to_inf_ordering = Endpoint::<SIDE, T>::to_inf_ordering();
+        let to_zero_ordering = to_inf_ordering.reverse();
 
         let (a, b) = map_pair((self, other), |p| p.as_ref().into_data().bound_val());
         match (self, other) {
             (Self::Low(_), Self::Normal(_)) if a.is_some() && b.is_some() && a != b => {
-                Some(low_with_normal)
+                Some(to_zero_ordering)
             }
             (Self::Normal(_), Self::Low(_)) if a.is_some() && b.is_some() && a != b => {
-                Some(normal_with_low)
+                Some(to_inf_ordering)
             }
             other => {
                 let (a, b) = map_pair(other, |x| x.as_ref().into_data());
@@ -202,7 +203,7 @@ impl<const SIDE: bool, T: PartialOrd> PartialOrd for Prioritized<SidedBound<SIDE
     }
 }
 
-impl<const SIDE: bool, T: Ord> Ord for Prioritized<SidedBound<SIDE, T>> {
+impl<const SIDE: bool, T: Ord> Ord for Prioritized<Endpoint<SIDE, T>> {
     fn cmp(&self, other: &Self) -> Ordering {
         self.partial_cmp(other)
             .expect("comparison between Ord values failed")
@@ -216,6 +217,7 @@ impl<T> Prioritized<T> {
         }
     }
 
+    #[allow(dead_code)]
     fn map<U, F>(self, mut f: F) -> Prioritized<U>
     where
         F: FnMut(T) -> U,
@@ -240,29 +242,40 @@ impl<T> From<T> for Prioritized<T> {
     }
 }
 
+type PrioritizedBounds<T> = (
+    Prioritized<Endpoint<LEFT, T>>,
+    Prioritized<Endpoint<RIGHT, T>>,
+);
+
 impl<T> Interval<T> {
     /// Auxiliary function to help with multiplying two [`Intervals`].
-    fn mul_bound<const SIDE: bool, N, Z>(
+    fn mul_bound<const SIDE: bool, N, Z, E>(
         self,
-        rhs: SidedBound<SIDE, N>,
-    ) -> Pair<Prioritized<Bound<Z>>>
+        rhs: Endpoint<SIDE, N>,
+    ) -> Result<PrioritizedBounds<Z>, E>
     where
-        Self: Bounded<T> + Mul<N, Output = Interval<Z>>,
+        Self: Mul<N, Output = Interval<Z>>,
         T: Zero + PartialOrd,
         Z: Zero,
-        Interval<Z>: SingletonBounds<Z>,
+        Interval<Z>: Bounded<Z, Error = E>,
     {
         let zero_point = T::zero();
         let zero_result = || Z::zero();
 
-        let bounds = match Bound::from(rhs) {
-            Bound::Included(n) => (self * n).into_bounds(),
-            Bound::Excluded(n) => {
-                let ref_bounds = <[_; _]>::from(self.as_ref().into_bounds());
-                let preserve_zero = ref_bounds.contains(&Bound::Included(&zero_point));
-                let product = (self * n).into_interior();
+        let (a, b) = match rhs {
+            Endpoint::Included(n) => (self * n).into_bounds()?,
+            Endpoint::Excluded(n) => {
+                let preserve_zero = match self.as_ref().into_bounds() {
+                    Ok((ref_a, ref_b)) => [ref_a.into_bound(), ref_b.into_bound()]
+                        .contains(&Bound::Included(&zero_point)),
+                    Err(_) => false,
+                };
 
-                map_pair(product.into_bounds(), |bound| {
+                let product = (self * n)
+                    .into_bounds()
+                    .map(|(a, b)| (a.into_exclusive_bound(), b.into_exclusive_bound()))?;
+
+                let (a, b) = map_pair(product, |bound| {
                     if matches!(bound, Bound::Excluded(ref t) if t.cmp_zero().map_or(false, Ordering::is_eq))
                         && preserve_zero
                     {
@@ -270,9 +283,10 @@ impl<T> Interval<T> {
                     } else {
                         bound
                     }
-                })
+                });
+                (a.into(), b.into())
             }
-            Bound::Unbounded => {
+            Endpoint::Infinite => {
                 let zero_bound = || {
                     if self.contains(&zero_point) {
                         Bound::Included(zero_result())
@@ -280,27 +294,32 @@ impl<T> Interval<T> {
                         Bound::Excluded(zero_result())
                     }
                 };
-                let inf = || Bound::Unbounded;
 
                 match (self.point_cmp(&zero_point), SIDE) {
                     // the interval is entirely non-negative multiplied by +inf (`[+a, +b] * +inf = [0, +inf)`)
                     // the interval is entirely non-positive multiplied by -inf (`[-a, -b] * -inf = [0, +inf)`)
                     (Some(Ordering::Greater), RIGHT) | (Some(Ordering::Less), LEFT) => {
-                        return (Prioritized::Low(zero_bound()), inf().into());
+                        return Ok((
+                            Prioritized::Low(zero_bound().into()),
+                            Prioritized::Normal(Endpoint::Infinite),
+                        ));
                     }
                     // the interval is entirely non-positive multiplied by +inf (`[-a, -b] * +inf = (-inf, 0]`)
                     // the interval is entirely non-negative multiplied by -inf (`[+a, +b] * -inf = (-inf, 0]`)
                     (Some(Ordering::Less), RIGHT) | (Some(Ordering::Greater), LEFT) => {
-                        return (inf().into(), Prioritized::Low(zero_bound()));
+                        return Ok((
+                            Prioritized::Normal(Endpoint::Infinite),
+                            Prioritized::Low(zero_bound().into()),
+                        ));
                     }
                     // [0] * +/- inf = [-inf, +inf] * 0 = [0, 0]
-                    (Some(Ordering::Equal), _) => (zero_bound(), zero_bound()),
+                    (Some(Ordering::Equal), _) => (zero_bound().into(), zero_bound().into()),
                     // the interval spans both negative and positive values
-                    (None, _) => (inf(), inf()),
+                    (None, _) => (Endpoint::Infinite, Endpoint::Infinite),
                 }
             }
         };
-        map_pair(bounds, Prioritized::Normal)
+        Ok((Prioritized::Normal(a), Prioritized::Normal(b)))
     }
 }
 
@@ -309,8 +328,7 @@ where
     N: Clone + PartialOrd + Zero,
     T: Clone + PartialOrd + Mul<N, Output = Z> + Zero,
     Z: Ord + Zero,
-    Self: Bounded<T>,
-    Interval<Z>: SingletonBounds<Z>,
+    Interval<Z>: Bounded<Z>,
 {
     type Output = Interval<Z>;
 
@@ -319,22 +337,25 @@ where
             return Interval::Empty;
         }
 
-        let (rhs_start, rhs_end) = sided_bounds(rhs);
+        let Ok((rhs_start, rhs_end)) = rhs.into_bounds() else {
+            return Interval::Empty;
+        };
 
-        let (left_start, left_end) = self.clone().mul_bound(rhs_start);
-        let (right_start, right_end) = self.mul_bound(rhs_end);
+        let Ok((left_start, left_end)) = self.clone().mul_bound(rhs_start) else {
+            panic!(
+                "multiplication of non-empty interval to an Endpoint produced an empty interval"
+            );
+        };
+        let Ok((right_start, right_end)) = self.mul_bound(rhs_end) else {
+            panic!(
+                "multiplication of non-empty interval to an Endpoint produced an empty interval"
+            );
+        };
 
-        let (start1, start2) = map_pair((left_start, right_start), |x| {
-            x.map(SidedBound::<LEFT, _>::new)
-        });
-        let (end1, end2) = map_pair((left_end, right_end), |x| {
-            x.map(SidedBound::<RIGHT, _>::new)
-        });
+        let start = left_start.min(right_start).into_data();
+        let end = left_end.max(right_end).into_data();
 
-        let start = start1.min(start2).into_data();
-        let end = end1.max(end2).into_data();
-
-        let interval = Interval::from((start, end));
+        let interval = Interval::from_bounds((start, end));
         if interval.is_empty() {
             interval.into_closure()
         } else {
@@ -352,15 +373,15 @@ where
     /// If the [`Interval`] has two endpoints, the complement will be represented
     /// as a pair of intervals (one to the left of the start, one to the right of the end).
     pub fn complement(self) -> OneOrPair<Self> {
-        if self.is_full() {
-            return Self::Empty.into();
-        }
+        let Ok((start, end)) = self.into_bounds() else {
+            return Self::Full.into();
+        };
 
-        let (start, end) = sided_bounds(self);
-        let not_start = Self::from_bounds((!start).into());
-        let not_end = Self::from_bounds((!end).into());
+        let not_start = Self::from_bounds((-start).augment_with_inf());
+        let not_end = Self::from_bounds((-end).augment_with_inf());
 
         match (not_start, not_end) {
+            (Self::Full, Self::Full) => OneOrPair::One(Self::Empty),
             (Self::Full, i) | (i, Self::Full) => OneOrPair::One(i),
             pair => OneOrPair::Pair(pair),
         }
@@ -651,18 +672,20 @@ mod mul_tests {
     }
 
     fn cmp_mul_bound<T: PartialEq + core::fmt::Debug>(
-        product: Pair<Prioritized<Bound<T>>>,
+        bounds: Result<PrioritizedBounds<T>, crate::bounds::EmptyIntervalError<T>>,
         result_interval: Interval<T>,
     ) where
-        Interval<T>: Bounded<T>,
+        Interval<T>: Bounded<T, Error: core::fmt::Debug>,
     {
-        let pair = map_pair(product, Prioritized::into_data);
-        assert_eq!(pair, result_interval.into_bounds());
+        let (a, b) = bounds.unwrap();
+        let pair = (a.into_data(), b.into_data());
+        assert_eq!(pair, result_interval.into_bounds().unwrap());
     }
 
     #[test]
     fn mul_to_infinite_bound() {
-        let (neg_inf, pos_inf) = sided_bounds(interval!(..: i32));
+        let (neg_inf, pos_inf) = interval!(..: i32).into_bounds().unwrap();
+
         cmp_mul_bound(interval!(>= 0).mul_bound(pos_inf), interval!(>= 0));
         cmp_mul_bound(interval!(> 0).mul_bound(pos_inf), interval!(> 0));
         cmp_mul_bound(interval!(>= 1).mul_bound(pos_inf), interval!(> 0));
@@ -682,7 +705,7 @@ mod mul_tests {
 
     #[test]
     fn zero_unbounded_to_finite() {
-        let upper_bound = SidedBound::<RIGHT, _>::new(Bound::Excluded(5));
+        let upper_bound = Endpoint::<RIGHT, _>::from(Bound::Excluded(5));
         cmp_mul_bound(interval!(>= 0).mul_bound(upper_bound), interval!(>= 0));
     }
 
@@ -698,7 +721,7 @@ mod mul_tests {
 
         assert_eq!(r2 * 0, interval!([0, 0]));
 
-        let (rhs_start, rhs_end) = sided_bounds(r1);
+        let (rhs_start, rhs_end) = r1.into_bounds().unwrap();
         cmp_mul_bound(r2.mul_bound(rhs_start), interval!(< 0));
         cmp_mul_bound(r2.mul_bound(rhs_end), interval!((0, 0)));
         assert_eq!(r2 * r1, interval!(< 0));
@@ -803,8 +826,8 @@ mod mul_tests {
         assert_eq!(interval!((=c, d)) * a, interval!((-10, =8)));
         assert_eq!(interval!((=c, d)) * b, interval!((= -12, 15)));
 
-        let bounds1 = sided_bounds(interval!((a, =b)));
-        let bounds2 = sided_bounds(interval!((=c, d)));
+        let bounds1 = interval!((a, =b)).into_bounds().unwrap();
+        let bounds2 = interval!((=c, d)).into_bounds().unwrap();
         cmp_mul_bound(
             interval!((a, =b)).mul_bound(bounds2.0),
             interval!((= -12, 8)),

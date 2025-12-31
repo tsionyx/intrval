@@ -13,10 +13,8 @@ mod str;
 #[cfg(feature = "arbitrary")]
 pub use self::arbitrary::BoundedInterval;
 
-use self::helper::Pair;
-
 pub use self::{
-    bounds::Bounded,
+    bounds::{Bounded, EmptyIntervalError, Endpoint},
     helper::{OneOrPair, Size, Zero},
     interval::Interval,
     singleton::{Singleton, SingletonBounds},

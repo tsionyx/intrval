@@ -3,7 +3,7 @@
 //! the implementation is separated.
 
 #[cfg(feature = "singleton")]
-use core::ops::Bound;
+use crate::bounds::{BothBounds, Endpoint};
 
 use crate::Interval;
 
@@ -19,14 +19,14 @@ pub trait Singleton<T> {
 }
 
 #[allow(unnameable_types)]
-/// Special trait to convert a value into [`Bound`][core::ops::Bound]-s representing a singleton interval.
+/// Special trait to convert a value into [`Endpoint`][crate::Endpoint]-s representing a singleton interval.
 ///
 /// This trait is only has a single method when the `singleton` feature is enabled.
 /// Otherwise it is an empty trait and implemented for `Interval<T>` by default.
 pub trait SingletonBounds<T> {
     #[cfg(feature = "singleton")]
-    /// Convert the given value into [`Bound`]-s representing a singleton interval.
-    fn value_into_bounds(x: T) -> (Bound<T>, Bound<T>);
+    /// Convert the given value into [`Endpoint`][crate::Endpoint]-s representing a singleton interval.
+    fn value_into_bounds(x: T) -> BothBounds<T>;
 }
 
 #[cfg(not(feature = "singleton"))]
@@ -54,7 +54,7 @@ impl<T> SingletonBounds<T> for Interval<T>
 where
     T: Clone,
 {
-    fn value_into_bounds(x: T) -> (Bound<T>, Bound<T>) {
-        (Bound::Included(x.clone()), Bound::Included(x))
+    fn value_into_bounds(x: T) -> BothBounds<T> {
+        (Endpoint::Included(x.clone()), Endpoint::Included(x))
     }
 }

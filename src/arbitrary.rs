@@ -219,13 +219,11 @@ mod prop_test {
 
         #[test]
         fn contains_implies_clamp_preserving(range: Interval<Int>, x in params_range()) {
-            use core::{
-                cmp::Ordering,
-                ops::{Bound, RangeBounds as _},
-            };
+            use core::cmp::Ordering;
+            use crate::bounds::{Endpoint, Bounded as _};
 
-            fn bound_included<T>(b: Bound<T>) -> Option<T> {
-                if let Bound::Included(v) = b {
+            fn bound_included<const SIDE: bool, T>(b: Endpoint<SIDE, T>) -> Option<T> {
+                if let Endpoint::Included(v) = b {
                     Some(v)
                 } else {
                     None
@@ -236,23 +234,24 @@ mod prop_test {
                 let clamped = range.clamp(x);
                 prop_assert_eq!(clamped, Ok((Ordering::Equal, x)));
             } else if !range.is_empty() {
+                let (a, b) = range.into_bounds().unwrap();
                 let (ordering, clamped) = range.clamp(x).unwrap();
                 match ordering {
                     Ordering::Less => {
-                        prop_assert_eq!(range.end_bound(), Bound::Excluded(&clamped));
+                        prop_assert_eq!(b, Endpoint::Excluded(clamped));
                     }
                     Ordering::Equal => {
                         prop_assert_ne!(clamped, x);
                         prop_assert!(
                             [
-                                bound_included(range.start_bound()),
-                                bound_included(range.end_bound())
+                                bound_included(a),
+                                bound_included(b)
                             ]
-                            .contains(&Some(&clamped))
+                            .contains(&Some(clamped))
                         );
                     }
                     Ordering::Greater => {
-                        prop_assert_eq!(range.start_bound(), Bound::Excluded(&clamped));
+                        prop_assert_eq!(a, Endpoint::Excluded(clamped));
                     }
                 }
             }
@@ -336,13 +335,12 @@ mod prop_test {
             fn roundtrip_into_bounds(range: Interval<Int>) {
                 use crate::Bounded as _;
 
+            let Ok(bounds) = range.into_bounds() else {
                 // skip the empty interval as its bounds are not well-defined
-                if range == interval!(_: Int) {
-                    return Ok(());
-                }
+                return Ok(());
+            };
 
-                let bounds = range.into_bounds();
-                let restored = Interval::<Int>::from_bounds(bounds);
+            let restored = Interval::<Int>::from_bounds(bounds);
 
                 #[cfg(feature = "singleton")]
                 // skip the singleton interval as it
@@ -357,43 +355,80 @@ mod prop_test {
 
             #[test]
             fn reversed_has_the_bounds_swapped(range: Interval<Int>) {
-                use crate::Bounded as _;
+                use crate::bounds::{Bounded as _, Endpoint};
 
-                let (start, end) = range.into_bounds();
-                let (rev_start, rev_end) = range.reverse().into_bounds();
+                let (start, end) = range.into_bounds()
+                    .unwrap_or((Endpoint::Infinite, Endpoint::Infinite));
+                let (rev_start, rev_end) = range.reverse().into_bounds()
+                    .unwrap_or((Endpoint::Infinite, Endpoint::Infinite));
 
-                prop_assert_eq!(start, rev_end);
-                prop_assert_eq!(end, rev_start);
+                prop_assert_eq!(start.into_bound(), rev_end.into_bound());
+                prop_assert_eq!(end.into_bound(), rev_start.into_bound());
             }
 
             #[test]
             fn closure_has_no_exclusive_bounds(range: Interval<Int>) {
-                use core::ops::Bound;
-                use crate::Bounded as _;
+                use crate::bounds::{Bounded as _, Endpoint};
 
-                let (start, end) = range.into_closure().into_bounds();
-                prop_assert!(!matches!(start, Bound::Excluded(_)));
-                prop_assert!(!matches!(end, Bound::Excluded(_)));
+                let (start, end) = range.into_closure().into_bounds()
+                    .unwrap_or((Endpoint::Infinite, Endpoint::Infinite));
+                prop_assert!(!matches!(start, Endpoint::Excluded(_)));
+                prop_assert!(!matches!(end, Endpoint::Excluded(_)));
             }
 
             #[test]
             fn interior_has_no_inclusive_bounds(range: Interval<Int>) {
-                use core::ops::Bound;
+                use crate::bounds::{Bounded as _, Endpoint};
+
+                let (start, end) = range.into_interior().into_bounds()
+                .unwrap_or((Endpoint::Infinite, Endpoint::Infinite));
+                prop_assert!(!matches!(start, Endpoint::Included(_)));
+                prop_assert!(!matches!(end, Endpoint::Included(_)));
+            }
+
+            #[test]
+            fn intersect_on_err_returns_original(range1: Interval<Int>, range2: Interval<Int>) {
                 use crate::Bounded as _;
 
-                let (start, end) = range.into_interior().into_bounds();
-                prop_assert!(!matches!(start, Bound::Included(_)));
-                prop_assert!(!matches!(end, Bound::Included(_)));
+                if let Err((a, b)) = range1.intersect(range2) {
+                    prop_assert_eq!(a.reduce(), range1.reduce());
+                    prop_assert_eq!(b.reduce(), range2.reduce());
+                }
+            }
+
+            #[test]
+            fn union_on_err_returns_original(range1: Interval<Int>, range2: Interval<Int>) {
+                use crate::Bounded as _;
+
+                if let Err((a, b)) = range1.union(range2) {
+                    prop_assert_eq!(a.reduce(), range1.reduce());
+                    prop_assert_eq!(b.reduce(), range2.reduce());
+                }
+            }
+
+            #[test]
+            fn enclosure_on_err_returns_original(range1: Interval<Int>, range2: Interval<Int>) {
+                use crate::Bounded as _;
+
+                if let Err((a, b)) = range1.enclosure(range2) {
+                    prop_assert_eq!(a.reduce(), range1.reduce());
+                    prop_assert_eq!(b.reduce(), range2.reduce());
+                }
             }
 
             #[test]
             fn union_is_enclosure_when_intersects(range1: Interval<Int>, range2: Interval<Int>) {
-                use crate::{Bounded as _, OneOrPair};
+                use crate::{bounds::{Bounded as _, Endpoint}, OneOrPair};
 
-                let inter_bounds = range1.intersect(range2);
-                let enc_bounds = range1.enclosure(range2);
+                let fallback = (Endpoint::Infinite, Endpoint::Infinite);
 
-                match range1.union(range2) {
+                let inter_bounds = range1.intersect(range2)
+                    .unwrap_or(fallback);
+                let enc_bounds = range1.enclosure(range2)
+                    .unwrap_or(fallback);
+
+                match range1.union(range2)
+                    .unwrap_or(OneOrPair::One(fallback)) {
                     OneOrPair::One(union_bounds) => {
                         prop_assert!(!Interval::from_bounds(inter_bounds).is_empty());
                         prop_assert_eq!(union_bounds, enc_bounds);
