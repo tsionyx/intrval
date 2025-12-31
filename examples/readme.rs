@@ -110,7 +110,7 @@ fn main() {
         (interval!(< -2), igt10)
     );
 
-    assert_eq!(igt2.intersect(igt10), igt10);
+    assert_eq!(igt2.intersect(igt10).unwrap(), igt10);
     // `.intersect` is aliased with `&` (falling back to Interval::Empty)
     assert!((igt10 & interval!([-2, 10])).is_empty());
     assert_eq!(
@@ -119,7 +119,11 @@ fn main() {
     );
 
     assert_eq!(
-        igt10.union(interval!([-2, 10])).into_single().unwrap(),
+        igt10
+            .union(interval!([-2, 10]))
+            .unwrap()
+            .into_single()
+            .unwrap(),
         interval!(>= -2)
     );
     // `.union` is aliased with `|` (falling back to the first non-empty if possible)
@@ -134,9 +138,11 @@ fn main() {
         // reorders the input intervals in left-to-right order if they do not intersect
         (interval!([3, 4]), interval!((5, 10)))
     );
-    // FIXME: invalid union with Interval::Empty
-    assert_eq!((interval!(_) | igt2).into_single().unwrap(), interval!(..));
-    assert_eq!((igt2 | interval!(_)).into_single().unwrap(), interval!(..));
+    assert_eq!((interval!(_) | igt2).into_single().unwrap(), igt2);
+    assert_eq!((igt2 | interval!(_)).into_single().unwrap(), igt2);
 
-    assert_eq!(interval!([-2, 10]).enclosure(igt10 * 2), interval!(>= -2));
+    assert_eq!(
+        interval!([-2, 10]).enclosure(igt10 * 2).unwrap(),
+        interval!(>= -2)
+    );
 }

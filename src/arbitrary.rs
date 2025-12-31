@@ -124,8 +124,10 @@ where
 
 #[cfg(test)]
 mod prop_test {
-    use crate::{bounds::Bounded as _, interval};
-    use core::ops::Bound::Unbounded;
+    use crate::{
+        bounds::{Bounded as _, Endpoint::Infinite},
+        interval,
+    };
 
     use super::*;
 
@@ -165,18 +167,21 @@ mod prop_test {
 
     fn one_or_zero_endpoints() -> impl Strategy<Value = Interval<Int>> {
         any::<Interval<Int>>().prop_filter("exclude both-bounded", |i| {
-            let (a, b) = i.as_ref().into_bounds();
-            matches!(a, Unbounded) || matches!(b, Unbounded)
+            if let Ok((a, b)) = i.as_ref().into_bounds() {
+                matches!(a, Infinite) || matches!(b, Infinite)
+            } else {
+                true
+            }
         })
     }
 
     fn single_endpoint() -> impl Strategy<Value = Interval<Int>> {
         any::<Interval<Int>>().prop_filter("only take one side-unbounded", |i| {
-            if i.is_empty() {
-                return false;
+            if let Ok((a, b)) = i.as_ref().into_bounds() {
+                matches!(a, Infinite) ^ matches!(b, Infinite)
+            } else {
+                false
             }
-            let (a, b) = i.as_ref().into_bounds();
-            matches!(a, Unbounded) ^ matches!(b, Unbounded)
         })
     }
 
@@ -257,13 +262,11 @@ mod prop_test {
 
         #[test]
         fn contains_implies_clamp_preserving(range: Interval<Int>, x in params_range()) {
-            use core::{
-                cmp::Ordering,
-                ops::{Bound, RangeBounds as _},
-            };
+            use core::cmp::Ordering;
+            use crate::bounds::Endpoint;
 
-            fn bound_included<T>(b: Bound<T>) -> Option<T> {
-                if let Bound::Included(v) = b {
+            fn bound_included<const SIDE: bool, T>(b: Endpoint<SIDE, T>) -> Option<T> {
+                if let Endpoint::Included(v) = b {
                     Some(v)
                 } else {
                     None
@@ -274,23 +277,24 @@ mod prop_test {
                 let clamped = range.clamp(x);
                 prop_assert_eq!(clamped, Ok((Ordering::Equal, x)));
             } else if !range.is_empty() {
+                let (a, b) = range.into_bounds().unwrap();
                 let (ordering, clamped) = range.clamp(x).unwrap();
                 match ordering {
                     Ordering::Less => {
-                        prop_assert_eq!(range.end_bound(), Bound::Excluded(&clamped));
+                        prop_assert_eq!(b, Endpoint::Excluded(clamped));
                     }
                     Ordering::Equal => {
                         prop_assert_ne!(clamped, x);
                         prop_assert!(
                             [
-                                bound_included(range.start_bound()),
-                                bound_included(range.end_bound())
+                                bound_included(a),
+                                bound_included(b)
                             ]
-                            .contains(&Some(&clamped))
+                            .contains(&Some(clamped))
                         );
                     }
                     Ordering::Greater => {
-                        prop_assert_eq!(range.start_bound(), Bound::Excluded(&clamped));
+                        prop_assert_eq!(a, Endpoint::Excluded(clamped));
                     }
                 }
             }
@@ -491,7 +495,7 @@ mod prop_test {
 
             #[test]
             fn roundtrip_into_bounds(range in non_empty()) {
-                let bounds = range.into_bounds();
+                let bounds = range.into_bounds().unwrap();
                 let restored = Interval::<Int>::from_bounds(bounds);
 
                 #[cfg(feature = "singleton")]
@@ -507,29 +511,53 @@ mod prop_test {
 
             #[test]
             fn reversed_has_the_bounds_swapped(range: Interval<Int>) {
-                let (start, end) = range.into_bounds();
-                let (rev_start, rev_end) = range.reverse().into_bounds();
+                let (start, end) = range.into_bounds().unwrap_or((Infinite, Infinite));
+                let (rev_start, rev_end) = range.reverse().into_bounds().unwrap_or((Infinite, Infinite));
 
-                prop_assert_eq!(start, rev_end);
-                prop_assert_eq!(end, rev_start);
+                prop_assert_eq!(start.into_bound(), rev_end.into_bound());
+                prop_assert_eq!(end.into_bound(), rev_start.into_bound());
             }
 
             #[test]
             fn closure_has_no_exclusive_bounds(range: Interval<Int>) {
-                use core::ops::Bound;
+                use crate::bounds::Endpoint;
 
-                let (start, end) = range.into_closure().into_bounds();
-                prop_assert!(!matches!(start, Bound::Excluded(_)));
-                prop_assert!(!matches!(end, Bound::Excluded(_)));
+                let (start, end) = range.into_closure().into_bounds().unwrap_or((Infinite, Infinite));
+                prop_assert!(!matches!(start, Endpoint::Excluded(_)));
+                prop_assert!(!matches!(end, Endpoint::Excluded(_)));
             }
 
             #[test]
             fn interior_has_no_inclusive_bounds(range: Interval<Int>) {
-                use core::ops::Bound;
+                use crate::bounds::Endpoint;
 
-                let (start, end) = range.into_interior().into_bounds();
-                prop_assert!(!matches!(start, Bound::Included(_)));
-                prop_assert!(!matches!(end, Bound::Included(_)));
+                let (start, end) = range.into_interior().into_bounds().unwrap_or((Infinite, Infinite));
+                prop_assert!(!matches!(start, Endpoint::Included(_)));
+                prop_assert!(!matches!(end, Endpoint::Included(_)));
+            }
+
+            #[test]
+            fn intersect_on_err_returns_original(range1: Interval<Int>, range2: Interval<Int>) {
+                if let Err((a, b)) = range1.intersect(range2) {
+                    prop_assert_eq!(a.reduce(), range1.reduce());
+                    prop_assert_eq!(b.reduce(), range2.reduce());
+                }
+            }
+
+            #[test]
+            fn union_on_err_returns_original(range1: Interval<Int>, range2: Interval<Int>) {
+                if let Err((a, b)) = range1.union(range2) {
+                    prop_assert_eq!(a.reduce(), range1.reduce());
+                    prop_assert_eq!(b.reduce(), range2.reduce());
+                }
+            }
+
+            #[test]
+            fn enclosure_on_err_returns_original(range1: Interval<Int>, range2: Interval<Int>) {
+                if let Err((a, b)) = range1.enclosure(range2) {
+                    prop_assert_eq!(a.reduce(), range1.reduce());
+                    prop_assert_eq!(b.reduce(), range2.reduce());
+                }
             }
 
             #[test]
@@ -537,9 +565,9 @@ mod prop_test {
                 use crate::OneOrPair;
 
                 let inter = range1 & range2;
-                let enclosed = range1.enclosure(range2);
+                let enclosed = range1.enclosure(range2).unwrap_or(Interval::Full);
 
-                match range1.union(range2) {
+                match range1.union(range2).unwrap_or(OneOrPair::One(Interval::Full)) {
                     OneOrPair::One(i) => {
                         prop_assert!(!i.is_empty());
                         prop_assert_eq!(i, enclosed);
@@ -547,8 +575,8 @@ mod prop_test {
                     OneOrPair::Pair((a, b)) => {
                         prop_assert!(inter.is_empty());
                         let restored = Interval::from_bounds((
-                            a.into_bounds().0,
-                            b.into_bounds().1,
+                            a.into_bounds().unwrap().0,
+                            b.into_bounds().unwrap().1,
                         ));
                         prop_assert_eq!(restored, enclosed);
                     }
@@ -559,9 +587,10 @@ mod prop_test {
             fn complement_union_and_intersect(range in one_or_zero_endpoints()) {
                 let complement = (!range).into_single().unwrap();
 
-                // FIXME: intersect with empty case
-                // assert!((range & complement).is_empty());
-                assert_eq!(range.union(complement).into_single().unwrap(),
+                assert!((range & complement).is_empty());
+                assert_eq!(range.union(complement)
+                        .unwrap_or_else(|_| Interval::Full.into())
+                        .into_single().unwrap(),
                     Interval::Full
                 );
             }

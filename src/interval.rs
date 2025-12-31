@@ -1,12 +1,7 @@
-//! Generic intervals library
-
-use core::{
-    cmp::Ordering,
-    ops::{Bound, RangeBounds as _},
-};
+use core::cmp::Ordering;
 
 use crate::{
-    bounds::{sided_bounds, Bounded},
+    bounds::{Bounded, Endpoint},
     helper::{Pair, Size, Zero},
     singleton::SingletonBounds,
 };
@@ -254,17 +249,19 @@ impl<T> Interval<T> {
     where
         T: PartialOrd,
     {
-        if matches!(self, Self::Empty) {
+        use Endpoint::{Excluded, Included, Infinite};
+
+        let Ok(bounds) = self.as_ref().into_bounds() else {
             return true;
-        }
+        };
 
         #[allow(clippy::unnested_or_patterns)]
-        let has_something = match (self.start_bound(), self.end_bound()) {
-            (Bound::Unbounded, _) | (_, Bound::Unbounded) => true,
-            (Bound::Included(start), Bound::Excluded(end))
-            | (Bound::Excluded(start), Bound::Included(end))
-            | (Bound::Excluded(start), Bound::Excluded(end)) => start < end,
-            (Bound::Included(start), Bound::Included(end)) => start <= end,
+        let has_something = match bounds {
+            (Infinite, _) | (_, Infinite) => true,
+            (Included(start), Excluded(end))
+            | (Excluded(start), Included(end))
+            | (Excluded(start), Excluded(end)) => start < end,
+            (Included(start), Included(end)) => start <= end,
         };
         !has_something
     }
@@ -280,20 +277,21 @@ impl<T> Interval<T> {
         T: PartialOrd<U>,
         U: ?Sized + PartialOrd<T>,
     {
-        use core::ops::RangeBounds as _;
+        use Endpoint::{Excluded, Included, Infinite};
 
-        if matches!(self, Self::Empty) {
+        let Ok((a, b)) = self.as_ref().into_bounds() else {
+            // an empty interval does not contain any point
             return false;
-        }
+        };
 
-        (match self.start_bound() {
-            Bound::Included(start) => start <= point,
-            Bound::Excluded(start) => start < point,
-            Bound::Unbounded => true,
-        }) && (match self.end_bound() {
-            Bound::Included(end) => point <= end,
-            Bound::Excluded(end) => point < end,
-            Bound::Unbounded => true,
+        (match a {
+            Included(start) => start <= point,
+            Excluded(start) => start < point,
+            Infinite => true,
+        }) && (match b {
+            Included(end) => point <= end,
+            Excluded(end) => point < end,
+            Infinite => true,
         })
     }
 
@@ -326,7 +324,9 @@ impl<T> Interval<T> {
             return Size::Empty;
         }
 
-        let (a, b) = sided_bounds(self.as_ref());
+        let Ok((a, b)) = self.as_ref().into_bounds() else {
+            return Size::Empty;
+        };
 
         let Some(start) = a.bound_val().copied() else {
             return Size::Infinite;
@@ -361,13 +361,17 @@ impl<T> Interval<T> {
             return Err(x);
         }
 
+        let Ok((a, b)) = self.as_ref().into_bounds() else {
+            return Err(x);
+        };
+
         let res = {
-            match self.start_bound() {
-                Bound::Included(start) if &x < start => (Ordering::Equal, start.clone()),
-                Bound::Excluded(start) if &x <= start => (Ordering::Greater, start.clone()),
-                _ => match self.end_bound() {
-                    Bound::Included(end) if &x > end => (Ordering::Equal, end.clone()),
-                    Bound::Excluded(end) if &x >= end => (Ordering::Less, end.clone()),
+            match a {
+                Endpoint::Included(start) if &x < start => (Ordering::Equal, start.clone()),
+                Endpoint::Excluded(start) if &x <= start => (Ordering::Greater, start.clone()),
+                _ => match b {
+                    Endpoint::Included(end) if &x > end => (Ordering::Equal, end.clone()),
+                    Endpoint::Excluded(end) if &x >= end => (Ordering::Less, end.clone()),
                     _ => (Ordering::Equal, x),
                 },
             }

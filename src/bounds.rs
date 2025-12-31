@@ -1,50 +1,194 @@
 use core::{
     cmp::Ordering,
-    ops::{Add, Bound, Neg, Not, RangeBounds, Sub},
+    fmt,
+    ops::{Add, Bound, Neg, Not, Sub},
 };
 
-use crate::{singleton::SingletonBounds, Interval, OneOrPair, Pair};
+use crate::{helper::Pair, singleton::SingletonBounds, Interval, OneOrPair};
 
-/// Used to convert a range into start and end bounds, consuming the
-/// range by value.
-///
-/// TODO: consider matching with into `cope::ops::IntoBounds` when
-/// the `feature = "range_into_bounds"` gets stabilized.
-pub trait Bounded<T>: RangeBounds<T> {
-    /// Create from the given pair of [`Bound`]-s.
-    fn from_bounds(bounds: Pair<Bound<T>>) -> Self;
+pub const LEFT: bool = false;
+pub const RIGHT: bool = true;
 
-    /// Convert this range into the start and end [`Bound`]-s.
-    fn into_bounds(self) -> Pair<Bound<T>>;
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// The bound of an interval.
+pub enum Endpoint<const SIDE: bool, T> {
+    /// The point is included in the interval.
+    Included(T),
+    /// The point is excluded from the interval.
+    Excluded(T),
+    /// The interval is unbounded in this direction.
+    Infinite,
+}
 
-    #[must_use]
-    /// Compute the intersection of `self` and `other`.
-    fn intersect<R>(self, other: R) -> Self
-    where
-        Self: Sized,
-        T: Ord,
-        R: Sized + Bounded<T>,
-    {
-        let (self_start, self_end) = sided_bounds(self);
-        let (other_start, other_end) = sided_bounds(other);
+pub type LBound<T> = Endpoint<LEFT, T>;
+pub type RBound<T> = Endpoint<RIGHT, T>;
+pub type BothBounds<T> = (LBound<T>, RBound<T>);
 
-        let start = Ord::max(self_start, other_start).into();
-        let end = Ord::min(self_end, other_end).into();
-
-        Self::from_bounds((start, end))
+impl<const SIDE: bool, T> Endpoint<SIDE, T> {
+    /// Convert [`Endpoint`] into a [`Bound`].
+    pub fn into_bound(self) -> Bound<T> {
+        match self {
+            Self::Included(v) => Bound::Included(v),
+            Self::Excluded(v) => Bound::Excluded(v),
+            Self::Infinite => Bound::Unbounded,
+        }
     }
 
-    #[must_use]
+    /// Convert [`Endpoint`] into an open [`Bound`].
+    pub fn into_exclusive_bound(self) -> Bound<T> {
+        match self.into_bound() {
+            Bound::Included(v) => Bound::Excluded(v),
+            other => other,
+        }
+    }
+
+    fn swap_inclusion(self) -> Self {
+        match self {
+            Self::Included(v) => Self::Excluded(v),
+            Self::Excluded(v) => Self::Included(v),
+            Self::Infinite => Self::Infinite,
+        }
+    }
+
+    fn diff_bound<U, Z>(self, rhs: Bound<U>) -> Bound<Z>
+    where
+        T: Sub<U, Output = Z>,
+    {
+        use Bound::{Excluded, Included, Unbounded};
+
+        match (self.into_bound(), rhs) {
+            (Included(a), Included(b)) => Included(a - b),
+            (Included(a), Excluded(b)) | (Excluded(a), Included(b) | Excluded(b)) => {
+                Excluded(a - b)
+            }
+            (Unbounded, _) | (_, Unbounded) => Unbounded,
+        }
+    }
+
+    pub(crate) fn augment_with_inf(self) -> BothBounds<T> {
+        #[allow(clippy::match_bool)]
+        match SIDE {
+            LEFT => (LBound::from(self.into_bound()), RBound::Infinite),
+            RIGHT => (LBound::Infinite, RBound::from(self.into_bound())),
+        }
+    }
+}
+
+impl<const SIDE: bool, T> From<Endpoint<SIDE, T>> for Bound<T> {
+    fn from(value: Endpoint<SIDE, T>) -> Self {
+        value.into_bound()
+    }
+}
+
+impl<const SIDE: bool, T> From<Bound<T>> for Endpoint<SIDE, T> {
+    fn from(value: Bound<T>) -> Self {
+        match value {
+            Bound::Included(v) => Self::Included(v),
+            Bound::Excluded(v) => Self::Excluded(v),
+            Bound::Unbounded => Self::Infinite,
+        }
+    }
+}
+
+impl<const SIDE: bool, T> fmt::Display for Endpoint<SIDE, T>
+where
+    T: fmt::Display,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        #[allow(clippy::match_bool)]
+        match SIDE {
+            LEFT => match self {
+                Self::Included(v) => {
+                    write!(f, "[")?;
+                    v.fmt(f)
+                }
+                Self::Excluded(v) => {
+                    write!(f, "(")?;
+                    v.fmt(f)
+                }
+                Self::Infinite => write!(f, "(-inf"),
+            },
+            RIGHT => match self {
+                Self::Included(v) => {
+                    v.fmt(f)?;
+                    write!(f, "]")
+                }
+                Self::Excluded(v) => {
+                    v.fmt(f)?;
+                    write!(f, ")")
+                }
+                Self::Infinite => write!(f, "+inf)"),
+            },
+        }
+    }
+}
+
+/// Convert the two [`Bounded`] values into a pair of `BothBounds`,
+/// returning the original pair of values
+/// if at least one [conversion][Bounded::into_bounds] fails.
+fn pair_into_bounds<B1, B2, T>(a: B1, b: B2) -> Result<Pair<BothBounds<T>>, (B1, B2)>
+where
+    B1: Bounded<T>,
+    B2: Bounded<T>,
+{
+    let a_bounds = match a.into_bounds() {
+        Ok(bounds) => bounds,
+        Err(err) => return Err((err.into(), b)),
+    };
+    let b_bounds = match b.into_bounds() {
+        Ok(bounds) => bounds,
+        Err(err) => return Err((B1::from_bounds(a_bounds), err.into())),
+    };
+
+    Ok((a_bounds, b_bounds))
+}
+
+/// Used to convert a value into start and end endpoints, consuming the value.
+///
+/// TODO: consider matching with `cope::ops::IntoBounds` when
+/// the `feature = "range_into_bounds"` gets stabilized.
+pub trait Bounded<T>: Sized {
+    /// The error signalling conversion to [`Endpoint`]-s fails.
+    type Error: Into<Self>;
+
+    /// Create from the given pair of [`Bound`]-s.
+    fn from_bounds(bounds: BothBounds<T>) -> Self;
+
+    /// Convert this range into the start and end bounds.
+    ///
+    /// # Errors
+    /// Return [`Self::Error`] if the conversion fails.
+    fn into_bounds(self) -> Result<BothBounds<T>, Self::Error>;
+
+    /// Compute the intersection of `self` and `other`.
+    ///
+    /// # Errors
+    /// Return a pair of original values if at least one of [`Self::into_bounds`] fails.
+    fn intersect<R>(self, other: R) -> Result<Self, (Self, R)>
+    where
+        T: Ord,
+        R: Bounded<T>,
+    {
+        let ((self_start, self_end), (other_start, other_end)) = pair_into_bounds(self, other)?;
+
+        let start = self_start.max(other_start);
+        let end = self_end.min(other_end);
+
+        Ok(Self::from_bounds((start, end)))
+    }
+
     /// The smallest span containing both `self` and `other`
     /// if the values [intersects][Self::intersect] (wrapped in [`OneOrPair::One`]).
     ///
     /// Otherwise (when the intervals are disjoint),
-    /// return a [pair][OneOrPair::Pair] of pairs of ordered ranges.
-    fn union<R>(self, other: R) -> OneOrPair<Self>
+    /// return a [pair][OneOrPair::Pair] of pairs of ordered ranges
+    ///
+    /// # Errors
+    /// Return a pair of original values if at least one of [`Self::into_bounds`] fails.
+    fn union<R>(self, other: R) -> Result<OneOrPair<Self>, (Self, R)>
     where
-        Self: Sized,
         T: Ord,
-        R: Sized + Bounded<T>,
+        R: Bounded<T>,
     {
         // TODO: use `core::cmp::minmax` when stabilized.
         fn minmax<T: Ord>(v1: T, v2: T) -> [T; 2] {
@@ -55,14 +199,13 @@ pub trait Bounded<T>: RangeBounds<T> {
             }
         }
 
-        let (self_start, self_end) = sided_bounds(self);
-        let (other_start, other_end) = sided_bounds(other);
+        let ((self_start, self_end), (other_start, other_end)) = pair_into_bounds(self, other)?;
 
         let [min_start, max_start] = minmax(self_start, other_start);
         let [min_end, max_end] = minmax(self_end, other_end);
 
         let are_disjoint = {
-            let intersection = Interval::from((max_start.as_ref(), min_end.as_ref()));
+            let intersection = Interval::from_bounds((max_start.as_ref(), min_end.as_ref()));
             let gap = intersection.reverse();
 
             intersection.is_empty()
@@ -74,46 +217,68 @@ pub trait Bounded<T>: RangeBounds<T> {
                 )
         };
 
-        if are_disjoint {
+        let one_or_pair = if are_disjoint {
             OneOrPair::Pair((
-                Self::from_bounds((min_start.into(), min_end.into())),
-                Self::from_bounds((max_start.into(), max_end.into())),
+                Self::from_bounds((min_start, min_end)),
+                Self::from_bounds((max_start, max_end)),
             ))
         } else {
-            OneOrPair::One(Self::from_bounds((min_start.into(), max_end.into())))
-        }
+            OneOrPair::One(Self::from_bounds((min_start, max_end)))
+        };
+        Ok(one_or_pair)
     }
 
-    #[must_use]
     /// The smallest span containing both `self` and `other`.
-    fn enclosure<R>(self, other: R) -> Self
+    ///
+    /// # Errors
+    /// Return a pair of original values if at least one of [`Self::into_bounds`] fails.
+    fn enclosure<R>(self, other: R) -> Result<Self, (Self, R)>
     where
-        Self: Sized,
         T: Ord,
-        R: Sized + Bounded<T>,
+        R: Bounded<T>,
     {
-        let (self_start, self_end) = sided_bounds(self);
-        let (other_start, other_end) = sided_bounds(other);
+        let ((self_start, self_end), (other_start, other_end)) = pair_into_bounds(self, other)?;
 
-        let start = Ord::min(self_start, other_start).into();
-        let end = Ord::max(self_end, other_end).into();
-        Self::from_bounds((start, end))
+        let start = self_start.min(other_start);
+        let end = self_end.max(other_end);
+        Ok(Self::from_bounds((start, end)))
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// The operation error indicating that the interval is empty.
+pub struct EmptyIntervalError<T>(Interval<T>);
+
+impl<T: fmt::Display> fmt::Display for EmptyIntervalError<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "the interval is empty: ")?;
+        self.0.fmt(f)
+    }
+}
+
+impl<T> From<EmptyIntervalError<T>> for Interval<T> {
+    fn from(err: EmptyIntervalError<T>) -> Self {
+        err.0
+    }
+}
+
+impl<T: fmt::Debug + fmt::Display> core::error::Error for EmptyIntervalError<T> {}
 
 impl<T> Bounded<T> for Interval<T>
 where
     Self: SingletonBounds<T>,
 {
-    fn from_bounds(bounds: Pair<Bound<T>>) -> Self {
-        use Bound::{Excluded, Included, Unbounded};
+    type Error = EmptyIntervalError<T>;
+
+    fn from_bounds(bounds: BothBounds<T>) -> Self {
+        use Endpoint::{Excluded, Included, Infinite};
 
         match bounds {
-            (Unbounded, Unbounded) => Self::Full,
-            (Unbounded, Included(b)) => Self::LessThanOrEqual(b),
-            (Unbounded, Excluded(b)) => Self::LessThan(b),
-            (Included(a), Unbounded) => Self::GreaterThanOrEqual(a),
-            (Excluded(a), Unbounded) => Self::GreaterThan(a),
+            (Infinite, Infinite) => Self::Full,
+            (Infinite, Included(b)) => Self::LessThanOrEqual(b),
+            (Infinite, Excluded(b)) => Self::LessThan(b),
+            (Included(a), Infinite) => Self::GreaterThanOrEqual(a),
+            (Excluded(a), Infinite) => Self::GreaterThan(a),
             (Included(a), Included(b)) => Self::Closed((a, b)),
             (Included(a), Excluded(b)) => Self::RightOpen((a, b)),
             (Excluded(a), Included(b)) => Self::LeftOpen((a, b)),
@@ -121,64 +286,48 @@ where
         }
     }
 
-    fn into_bounds(self) -> Pair<Bound<T>> {
-        use Bound::{Excluded, Included, Unbounded};
+    fn into_bounds(self) -> Result<BothBounds<T>, Self::Error> {
+        use Endpoint::{Excluded, Included, Infinite};
 
-        // TODO: separate the `Interval<T>` into enum variants for empty and non-empty intervals.
-
-        #[allow(clippy::match_same_arms)]
-        match self {
-            // TODO: provide a better solution, e.g. `(Excluded(T::default()), Excluded(T::default()))`
-            // in order for `Self::contains` to always return `false`.
-            Self::Empty => (Unbounded, Unbounded),
-            Self::LessThan(b) => (Unbounded, Excluded(b)),
-            Self::LessThanOrEqual(b) => (Unbounded, Included(b)),
+        let bounds = match self {
+            Self::Empty => return Err(EmptyIntervalError(self)),
+            Self::LessThan(b) => (Infinite, Excluded(b)),
+            Self::LessThanOrEqual(b) => (Infinite, Included(b)),
             #[cfg(feature = "singleton")]
             Self::Singleton(x) => <Self as SingletonBounds<T>>::value_into_bounds(x),
-            Self::GreaterThanOrEqual(a) => (Included(a), Unbounded),
-            Self::GreaterThan(a) => (Excluded(a), Unbounded),
+            Self::GreaterThanOrEqual(a) => (Included(a), Infinite),
+            Self::GreaterThan(a) => (Excluded(a), Infinite),
             Self::Open((a, b)) => (Excluded(a), Excluded(b)),
             Self::LeftOpen((a, b)) => (Excluded(a), Included(b)),
             Self::RightOpen((a, b)) => (Included(a), Excluded(b)),
             Self::Closed((a, b)) => (Included(a), Included(b)),
-            Self::Full => (Unbounded, Unbounded),
-        }
+            Self::Full => (Infinite, Infinite),
+        };
+        Ok(bounds)
     }
 }
 
-impl<T> From<(SidedBound<LEFT, T>, SidedBound<RIGHT, T>)> for Interval<T>
+impl<T> From<BothBounds<T>> for Interval<T>
 where
     Self: Bounded<T>,
 {
-    fn from((a, b): (SidedBound<LEFT, T>, SidedBound<RIGHT, T>)) -> Self {
-        let bounds = (Bound::from(a), Bound::from(b));
+    fn from(bounds: BothBounds<T>) -> Self {
         Self::from_bounds(bounds)
     }
 }
 
-pub const LEFT: bool = false;
-pub const RIGHT: bool = true;
-
-#[allow(unnameable_types)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct SidedBound<const SIDE: bool, T>(Bound<T>);
-
-impl<const SIDE: bool, T> SidedBound<SIDE, T> {
-    pub(crate) const fn new(value: Bound<T>) -> Self {
-        Self(value)
-    }
-
-    /// Represent the result of operation `Unbounded.cmp(Bounded)`,
+impl<const SIDE: bool, T> Endpoint<SIDE, T> {
+    /// Represent the result of operation `Infinite.cmp(Bounded)`,
     /// i.e. the comparison of infinity with the finite number.
     ///
     /// E.g.:
-    /// - for the `LEFT` side: `Unbounded == -inf < x == Bounded`;
-    /// - for the `RIGHT` side: `Unbounded == +inf > x == Bounded`;
+    /// - for the `LEFT` side: `Infinite == -inf < x == Bounded`;
+    /// - for the `RIGHT` side: `Infinite == +inf > x == Bounded`;
     ///
     /// This is also the result of operation of comparing `Included` with `Excluded` bounds with the same underlying value:
     /// - for the `LEFT` side: `Included(x) < Excluded(x) ~= Included(x + epsilon)`;
     /// - for the `RIGHT` side: `Included(x) > Excluded(x) ~= Included(x - epsilon)`;
-    pub(crate) const fn inf_ordering() -> Ordering {
+    pub(crate) const fn to_inf_ordering() -> Ordering {
         #[allow(clippy::match_bool)]
         match SIDE {
             // `(a, ...)` can also be represented as `[a + epsilon, ...)`
@@ -192,105 +341,80 @@ impl<const SIDE: bool, T> SidedBound<SIDE, T> {
         }
     }
 
-    fn diff_bound<U, Z>(self, rhs: Bound<U>) -> Bound<Z>
-    where
-        T: Sub<U, Output = Z>,
-    {
-        use Bound::{Excluded, Included, Unbounded};
-
-        match (self.0, rhs) {
-            (Included(a), Included(b)) => Included(a - b),
-            (Included(a), Excluded(b)) | (Excluded(a), Included(b) | Excluded(b)) => {
-                Excluded(a - b)
-            }
-            (Unbounded, _) | (_, Unbounded) => Unbounded,
+    pub(crate) const fn as_ref(&self) -> Endpoint<SIDE, &T> {
+        match self {
+            Self::Included(v) => Endpoint::Included(v),
+            Self::Excluded(v) => Endpoint::Excluded(v),
+            Self::Infinite => Endpoint::Infinite,
         }
-    }
-
-    pub(crate) const fn as_ref(&self) -> SidedBound<SIDE, &T> {
-        let bound = match &self.0 {
-            Bound::Included(v) => Bound::Included(v),
-            Bound::Excluded(v) => Bound::Excluded(v),
-            Bound::Unbounded => Bound::Unbounded,
-        };
-        SidedBound::new(bound)
     }
 
     /// Convert the underlying value of the endpoint
     /// preserving the inclusion/exclusion state.
-    pub fn map<F, U>(self, f: F) -> SidedBound<SIDE, U>
+    pub fn map<F, U>(self, f: F) -> Endpoint<SIDE, U>
     where
         F: FnOnce(T) -> U,
     {
-        let bound = match self.0 {
-            Bound::Included(v) => Bound::Included(f(v)),
-            Bound::Excluded(v) => Bound::Excluded(f(v)),
-            Bound::Unbounded => Bound::Unbounded,
-        };
-        SidedBound::new(bound)
+        match self {
+            Self::Included(v) => Endpoint::Included(f(v)),
+            Self::Excluded(v) => Endpoint::Excluded(f(v)),
+            Self::Infinite => Endpoint::Infinite,
+        }
     }
 
     pub(crate) const fn bound_val(&self) -> Option<&T> {
-        match &self.0 {
-            Bound::Included(v) | Bound::Excluded(v) => Some(v),
-            Bound::Unbounded => None,
+        match self {
+            Self::Included(v) | Self::Excluded(v) => Some(v),
+            Self::Infinite => None,
         }
     }
 }
 
-pub fn sided_bounds<I: Bounded<T>, T>(interval: I) -> (SidedBound<LEFT, T>, SidedBound<RIGHT, T>) {
-    let (start, end) = interval.into_bounds();
-    (SidedBound::new(start), SidedBound::new(end))
-}
-
-impl<const SIDE: bool, T> From<SidedBound<SIDE, T>> for Bound<T> {
-    fn from(value: SidedBound<SIDE, T>) -> Self {
-        value.0
-    }
-}
-
-impl<const SIDE: bool, T: PartialOrd> PartialOrd for SidedBound<SIDE, T> {
+impl<const SIDE: bool, T: PartialOrd> PartialOrd for Endpoint<SIDE, T> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        use Bound::{Excluded, Included, Unbounded};
+        use Endpoint::{Excluded, Included, Infinite};
 
-        let inf_ordering = Self::inf_ordering();
-        let with_inf_ordering = inf_ordering.reverse();
+        let to_inf_ordering = Self::to_inf_ordering();
+        let to_zero_ordering = to_inf_ordering.reverse();
 
-        match (&self.0, &other.0) {
-            (Unbounded, Unbounded) => Some(Ordering::Equal),
-            (Unbounded, _) => Some(inf_ordering),
-            (_, Unbounded) => Some(with_inf_ordering),
+        match (self, other) {
+            (Infinite, Infinite) => Some(Ordering::Equal),
+            (Infinite, _) => Some(to_inf_ordering),
+            (_, Infinite) => Some(to_zero_ordering),
 
             (Included(a), Included(b)) | (Excluded(a), Excluded(b)) => a.partial_cmp(b),
-            (Included(i), Excluded(e)) => i.partial_cmp(e).map(|x| x.then(inf_ordering)),
-            (Excluded(e), Included(i)) => e.partial_cmp(i).map(|x| x.then(with_inf_ordering)),
+            (Included(i), Excluded(e)) => i.partial_cmp(e).map(|x| x.then(to_inf_ordering)),
+            (Excluded(e), Included(i)) => e.partial_cmp(i).map(|x| x.then(to_zero_ordering)),
         }
     }
 }
 
-impl<const SIDE: bool, T> PartialEq<T> for SidedBound<SIDE, T>
+impl<const SIDE: bool, T> PartialEq<T> for Endpoint<SIDE, T>
 where
     T: PartialEq + Clone,
 {
     fn eq(&self, point: &T) -> bool {
-        self.eq(&Self::new(Bound::Included(point.clone())))
+        self.eq(&Self::Included(point.clone()))
     }
 }
 
-impl<const SIDE: bool, T: PartialOrd + Clone> PartialOrd<T> for SidedBound<SIDE, T> {
+impl<const SIDE: bool, T> PartialOrd<T> for Endpoint<SIDE, T>
+where
+    T: PartialOrd + Clone,
+{
     fn partial_cmp(&self, point: &T) -> Option<Ordering> {
-        self.partial_cmp(&Self::new(Bound::Included(point.clone())))
+        self.partial_cmp(&Self::Included(point.clone()))
     }
 }
 
-impl<const SIDE: bool, T: Ord> Ord for SidedBound<SIDE, T> {
+impl<const SIDE: bool, T: Ord> Ord for Endpoint<SIDE, T> {
     fn cmp(&self, other: &Self) -> Ordering {
         self.partial_cmp(other)
             .expect("comparison between Ord values failed")
     }
 }
 
-impl<const SIDE: bool, T> Neg for SidedBound<SIDE, T>
+impl<const SIDE: bool, T> Neg for Endpoint<SIDE, T>
 where
     T: Neg<Output = T>,
 {
@@ -301,107 +425,115 @@ where
     }
 }
 
-impl<const SIDE: bool, T, U, Z> Add<SidedBound<SIDE, U>> for SidedBound<SIDE, T>
+impl<const SIDE: bool, T, U, Z> Add<Endpoint<SIDE, U>> for Endpoint<SIDE, T>
 where
     T: Add<U, Output = Z>,
 {
-    type Output = SidedBound<SIDE, Z>;
+    type Output = Endpoint<SIDE, Z>;
 
-    fn add(self, rhs: SidedBound<SIDE, U>) -> Self::Output {
-        use Bound::{Excluded, Included, Unbounded};
-        let sum = match (Bound::from(self), Bound::from(rhs)) {
+    fn add(self, rhs: Endpoint<SIDE, U>) -> Self::Output {
+        use Endpoint::{Excluded, Included, Infinite};
+        match (self, rhs) {
             (Included(a), Included(b)) => Included(a + b),
             (Included(a) | Excluded(a), Excluded(b)) | (Excluded(a), Included(b)) => {
                 Excluded(a + b)
             }
-            (Unbounded, _) | (_, Unbounded) => Unbounded,
-        };
-        SidedBound::new(sum)
-    }
-}
-
-fn bound_negate_inclusion<T>(bound: Bound<T>) -> Bound<T> {
-    match bound {
-        Bound::Included(v) => Bound::Excluded(v),
-        Bound::Excluded(v) => Bound::Included(v),
-        Bound::Unbounded => Bound::Unbounded,
-    }
-}
-
-impl<T> Not for SidedBound<LEFT, T> {
-    type Output = SidedBound<RIGHT, T>;
-    fn not(self) -> Self::Output {
-        SidedBound::new(bound_negate_inclusion(self.0))
-    }
-}
-
-impl<T, U, Z> Sub<SidedBound<RIGHT, U>> for SidedBound<LEFT, T>
-where
-    T: Sub<U, Output = Z>,
-{
-    type Output = SidedBound<LEFT, Z>;
-
-    fn sub(self, rhs: SidedBound<RIGHT, U>) -> Self::Output {
-        SidedBound::new(self.diff_bound(rhs.0))
-    }
-}
-
-impl<T> Not for SidedBound<RIGHT, T> {
-    type Output = SidedBound<LEFT, T>;
-
-    fn not(self) -> Self::Output {
-        SidedBound::new(bound_negate_inclusion(self.0))
-    }
-}
-
-impl<T, U, Z> Sub<SidedBound<LEFT, U>> for SidedBound<RIGHT, T>
-where
-    T: Sub<U, Output = Z>,
-{
-    type Output = SidedBound<RIGHT, Z>;
-
-    fn sub(self, rhs: SidedBound<LEFT, U>) -> Self::Output {
-        SidedBound::new(self.diff_bound(rhs.0))
-    }
-}
-
-impl<const SIDE: bool, T> From<SidedBound<SIDE, T>> for Pair<Bound<T>> {
-    fn from(value: SidedBound<SIDE, T>) -> Self {
-        #[allow(clippy::match_bool)]
-        match SIDE {
-            LEFT => (value.0, Bound::Unbounded),
-            RIGHT => (Bound::Unbounded, value.0),
+            (Infinite, _) | (_, Infinite) => Infinite,
         }
+    }
+}
+
+impl<T> Not for LBound<T> {
+    type Output = RBound<T>;
+
+    fn not(self) -> Self::Output {
+        Endpoint::from(Bound::from(self.swap_inclusion()))
+    }
+}
+
+impl<T, U, Z> Sub<RBound<U>> for LBound<T>
+where
+    T: Sub<U, Output = Z>,
+{
+    type Output = LBound<Z>;
+
+    fn sub(self, rhs: RBound<U>) -> Self::Output {
+        self.diff_bound(rhs.into_bound()).into()
+    }
+}
+
+impl<T> Not for RBound<T> {
+    type Output = LBound<T>;
+
+    fn not(self) -> Self::Output {
+        Endpoint::from(Bound::from(self.swap_inclusion()))
+    }
+}
+
+impl<T, U, Z> Sub<LBound<U>> for RBound<T>
+where
+    T: Sub<U, Output = Z>,
+{
+    type Output = RBound<Z>;
+
+    fn sub(self, rhs: LBound<U>) -> Self::Output {
+        self.diff_bound(rhs.into_bound()).into()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use Bound::{Excluded, Included, Unbounded};
-
     use crate::interval;
+    use Endpoint::{Excluded, Included, Infinite};
 
     use super::*;
 
     #[test]
     fn into_bounds() {
-        assert_eq!(interval!(_: i32).into_bounds(), (Unbounded, Unbounded));
-        assert_eq!(interval!(<5).into_bounds(), (Unbounded, Excluded(5)));
-        assert_eq!(interval!(<=5).into_bounds(), (Unbounded, Included(5)));
-        assert_eq!(interval!(>5).into_bounds(), (Excluded(5), Unbounded));
-        assert_eq!(interval!(>=5).into_bounds(), (Included(5), Unbounded));
-        assert_eq!(interval!((3, 7)).into_bounds(), (Excluded(3), Excluded(7)));
-        assert_eq!(interval!((3, =7)).into_bounds(), (Excluded(3), Included(7)));
-        assert_eq!(interval!((=3, 7)).into_bounds(), (Included(3), Excluded(7)));
-        assert_eq!(interval!([3, 7]).into_bounds(), (Included(3), Included(7)));
-        assert_eq!(interval!(..: i32).into_bounds(), (Unbounded, Unbounded));
+        assert!(interval!(_: i32).into_bounds().is_err());
+        assert_eq!(
+            interval!(<5).into_bounds().unwrap(),
+            (Infinite, Excluded(5))
+        );
+        assert_eq!(
+            interval!(<=5).into_bounds().unwrap(),
+            (Infinite, Included(5))
+        );
+        assert_eq!(
+            interval!(>5).into_bounds().unwrap(),
+            (Excluded(5), Infinite)
+        );
+        assert_eq!(
+            interval!(>=5).into_bounds().unwrap(),
+            (Included(5), Infinite)
+        );
+        assert_eq!(
+            interval!((3, 7)).into_bounds().unwrap(),
+            (Excluded(3), Excluded(7))
+        );
+        assert_eq!(
+            interval!((3, =7)).into_bounds().unwrap(),
+            (Excluded(3), Included(7))
+        );
+        assert_eq!(
+            interval!((=3, 7)).into_bounds().unwrap(),
+            (Included(3), Excluded(7))
+        );
+        assert_eq!(
+            interval!([3, 7]).into_bounds().unwrap(),
+            (Included(3), Included(7))
+        );
+        assert_eq!(
+            interval!(..: i32).into_bounds().unwrap(),
+            (Infinite, Infinite)
+        );
     }
 
     #[test]
     fn intersect() {
         let a = interval!([3, 7]);
         let b = interval!((5, 10));
-        assert_eq!(a.intersect(b), interval!((5, =7)));
+        assert_eq!(a.intersect(b).unwrap(), interval!((5, =7)));
 
         let a = interval!(<5);
         let b = interval!(>3);
@@ -413,43 +545,45 @@ mod tests {
 
         let a = interval!(..: i32);
         let b = interval!(_: i32);
-        // FIXME: invalid!
-        assert_eq!(a.intersect(b), Interval::Full);
+        assert!(matches!(
+            a.intersect(b).unwrap_err(),
+            (interval!(..), interval!(_))
+        ));
     }
 
     #[test]
     fn intersect_empty() {
         let a = interval!([1, 2]);
         let b = interval!([3, 4]);
-        assert_eq!(a.intersect(b), interval!([3, 2]));
+        assert_eq!(a.intersect(b).unwrap(), interval!([3, 2]));
         assert!((a & b).reduce().is_empty());
 
         let a = interval!(>6);
         let b = interval!(<3);
-        assert_eq!(a.intersect(b), interval!((6, 3)));
+        assert_eq!(a.intersect(b).unwrap(), interval!((6, 3)));
         assert!((a & b).reduce().is_empty());
 
         let a = interval!(>=6);
         let b = interval!(<6);
-        assert_eq!(a.intersect(b), interval!((=6, 6)));
+        assert_eq!(a.intersect(b).unwrap(), interval!((=6, 6)));
         assert!((a & b).reduce().is_empty());
 
         let a = interval!((2, =4));
         let b = interval!((=3, 1));
-        assert_eq!(a.intersect(b), interval!((=3, 1)));
-        assert!(a.intersect(b).reduce().is_empty());
+        assert_eq!(a.intersect(b).unwrap(), interval!((=3, 1)));
+        assert!(a.intersect(b).unwrap().reduce().is_empty());
     }
 
     #[test]
     fn intersect_single() {
         let a = interval!(>=6);
         let b = interval!(<=6);
-        assert_eq!(a.intersect(b), interval!([6, 6]));
+        assert_eq!(a.intersect(b).unwrap(), interval!([6, 6]));
         assert_eq!((a & b).reduce(), interval!(=6));
 
         let a = interval!((2, =3));
         let b = interval!((=3, 8));
-        assert_eq!(a.intersect(b), interval!([3, 3]));
+        assert_eq!(a.intersect(b).unwrap(), interval!([3, 3]));
         assert_eq!((a & b).reduce(), interval!(==3));
     }
 
@@ -457,26 +591,29 @@ mod tests {
     fn enclosure() {
         let a = interval!([3, 7]);
         let b = interval!((5, 10));
-        assert_eq!(a.enclosure(b), interval!((=3, 10)));
+        assert_eq!(a.enclosure(b).unwrap(), interval!((=3, 10)));
 
         let a = interval!(<5);
         let b = interval!(>3);
-        assert_eq!(a.enclosure(b), Interval::Full);
+        assert_eq!(a.enclosure(b).unwrap(), Interval::Full);
 
         let a = interval!(<=-100);
         let b = interval!(>=100);
-        assert_eq!(a.enclosure(b), Interval::Full);
+        assert_eq!(a.enclosure(b).unwrap(), Interval::Full);
 
         let a = interval!([1, 2]);
         let b = interval!([3, 4]);
-        assert_eq!(a.enclosure(b), interval!([1, 4]));
+        assert_eq!(a.enclosure(b).unwrap(), interval!([1, 4]));
     }
 
     #[test]
     fn union_touching() {
         let a = interval!([1, 2]);
         let b = interval!([2, 4]);
-        assert_eq!(a.union(b).into_single().unwrap(), interval!([1, 4]));
+        assert_eq!(
+            a.union(b).unwrap().into_single().unwrap(),
+            interval!([1, 4])
+        );
 
         let a = interval!((1, 2));
         let b = interval!([2, 4]);
@@ -484,7 +621,10 @@ mod tests {
 
         let a = interval!([1, 2]);
         let b = interval!((2, 4));
-        assert_eq!(a.union(b).into_single().unwrap(), interval!((=1, 4)));
+        assert_eq!(
+            a.union(b).unwrap().into_single().unwrap(),
+            interval!((=1, 4))
+        );
 
         let a = interval!((1, 2));
         let b = interval!((2, 4));
@@ -494,16 +634,17 @@ mod tests {
         );
     }
 
-    fn left(b: Bound<i32>) -> SidedBound<LEFT, i32> {
-        SidedBound::new(b)
+    fn left(a: Bound<i32>) -> LBound<i32> {
+        a.into()
     }
 
-    fn right(b: Bound<i32>) -> SidedBound<RIGHT, i32> {
-        SidedBound::new(b)
+    fn right(b: Bound<i32>) -> RBound<i32> {
+        b.into()
     }
 
     #[test]
     fn unbounded_infimum() {
+        use Bound::{Excluded, Included, Unbounded};
         assert!(left(Unbounded) == left(Unbounded));
         assert!(left(Unbounded) < left(Included(i32::MIN)));
         assert!(left(Unbounded) < left(Excluded(i32::MIN)));
@@ -515,6 +656,7 @@ mod tests {
 
     #[test]
     fn forward_inner_inequality_for_lower() {
+        use Bound::{Excluded, Included};
         assert!(left(Included(i32::MIN)) < left(Included(-1_000)));
         assert!(left(Included(i32::MIN)) < left(Excluded(-1_000)));
 
@@ -534,6 +676,7 @@ mod tests {
 
     #[test]
     fn resolve_equal_included_excluded_lower() {
+        use Bound::{Excluded, Included};
         // '>=5' < '>5'
         assert!(left(Included(5)) < left(Excluded(5)));
         // '>100' > '>=100'
@@ -542,6 +685,7 @@ mod tests {
 
     #[test]
     fn unbounded_supremum() {
+        use Bound::{Excluded, Included, Unbounded};
         assert!(right(Unbounded) == right(Unbounded));
         assert!(right(Unbounded) > right(Included(i32::MIN)));
         assert!(right(Unbounded) > right(Excluded(i32::MIN)));
@@ -553,6 +697,7 @@ mod tests {
 
     #[test]
     fn forward_inner_inequality_for_upper() {
+        use Bound::{Excluded, Included};
         assert!(right(Included(i32::MIN)) < right(Included(-1_000)));
         assert!(right(Included(i32::MIN)) < right(Excluded(-1_000)));
 
@@ -572,6 +717,7 @@ mod tests {
 
     #[test]
     fn resolve_equal_included_excluded_upper() {
+        use Bound::{Excluded, Included};
         // '<=5' > '<5'
         assert!(right(Included(5)) > right(Excluded(5)));
         // '<100' < '<=100'
