@@ -49,7 +49,10 @@ impl<T> From<RangeToInclusive<T>> for Interval<T> {
 }
 
 #[allow(clippy::match_same_arms)]
-impl<T> RangeBounds<T> for Interval<T> {
+impl<T> RangeBounds<T> for Interval<T>
+where
+    T: PartialOrd,
+{
     fn start_bound(&self) -> Bound<&T> {
         self.as_ref()
             .into_bounds()
@@ -121,8 +124,8 @@ impl<T: Add<Output = T> + Clone> Add<T> for Interval<T> {
 
 impl<T, U, Z> Add<Interval<U>> for Interval<T>
 where
-    T: PartialOrd + Zero + Add<U, Output = Z>,
-    U: PartialOrd + Zero,
+    T: Zero + Add<U, Output = Z>,
+    U: Zero,
     Self: Bounded<T>,
     Interval<U>: Bounded<U>,
     Interval<Z>: Bounded<Z>,
@@ -130,23 +133,16 @@ where
     type Output = Interval<Z>;
 
     fn add(self, rhs: Interval<U>) -> Self::Output {
-        if self.is_empty() && rhs.is_empty() {
+        let (left, right) = (self.into_bounds().ok(), rhs.into_bounds().ok());
+        if left.is_none() && right.is_none() {
             return Interval::Empty;
         }
 
-        let (lhs_start, lhs_end) = if self.is_empty() {
-            (Endpoint::Included(T::zero()), Endpoint::Included(T::zero()))
-        } else {
-            self.into_bounds()
-                .unwrap_or_else(|_| panic!("failed .into_bounds() for non-empty interval"))
-        };
+        let (lhs_start, lhs_end) =
+            left.unwrap_or_else(|| (Endpoint::Included(T::zero()), Endpoint::Included(T::zero())));
 
-        let (rhs_start, rhs_end) = if rhs.is_empty() {
-            (Endpoint::Included(U::zero()), Endpoint::Included(U::zero()))
-        } else {
-            rhs.into_bounds()
-                .unwrap_or_else(|_| panic!("failed .into_bounds() for non-empty interval"))
-        };
+        let (rhs_start, rhs_end) =
+            right.unwrap_or_else(|| (Endpoint::Included(U::zero()), Endpoint::Included(U::zero())));
 
         Interval::from_bounds((lhs_start + rhs_start, lhs_end + rhs_end))
     }
@@ -162,8 +158,8 @@ impl<T: Sub<Output = T> + Clone> Sub<T> for Interval<T> {
 
 impl<T, U, Z> Sub<Interval<U>> for Interval<T>
 where
-    T: PartialOrd + Zero + Sub<U, Output = Z>,
-    U: PartialOrd + Zero,
+    T: Zero + Sub<U, Output = Z>,
+    U: Zero,
     Self: Bounded<T>,
     Interval<U>: Bounded<U>,
     Interval<Z>: Bounded<Z>,
@@ -171,23 +167,16 @@ where
     type Output = Interval<Z>;
 
     fn sub(self, rhs: Interval<U>) -> Self::Output {
-        if self.is_empty() && rhs.is_empty() {
+        let (left, right) = (self.into_bounds().ok(), rhs.into_bounds().ok());
+        if left.is_none() && right.is_none() {
             return Interval::Empty;
         }
 
-        let (lhs_start, lhs_end) = if self.is_empty() {
-            (Endpoint::Included(T::zero()), Endpoint::Included(T::zero()))
-        } else {
-            self.into_bounds()
-                .unwrap_or_else(|_| panic!("failed .into_bounds() for non-empty interval"))
-        };
+        let (lhs_start, lhs_end) =
+            left.unwrap_or_else(|| (Endpoint::Included(T::zero()), Endpoint::Included(T::zero())));
 
-        let (rhs_start, rhs_end) = if rhs.is_empty() {
-            (Endpoint::Included(U::zero()), Endpoint::Included(U::zero()))
-        } else {
-            rhs.into_bounds()
-                .unwrap_or_else(|_| panic!("failed .into_bounds() for non-empty interval"))
-        };
+        let (rhs_start, rhs_end) =
+            right.unwrap_or_else(|| (Endpoint::Included(U::zero()), Endpoint::Included(U::zero())));
 
         Interval::from_bounds((lhs_start - rhs_end, lhs_end - rhs_start))
     }
@@ -420,7 +409,7 @@ where
     type Output = Interval<Z>;
 
     fn mul(self, rhs: Interval<N>) -> Self::Output {
-        if self.is_empty() || rhs.is_empty() {
+        if self.is_empty() {
             return Interval::Empty;
         }
 
@@ -911,7 +900,12 @@ mod mul_tests {
 
         let (rhs_start, rhs_end) = r1.into_bounds().unwrap();
         cmp_mul_bound(r2.mul_bound(rhs_start), interval!(< 0));
-        cmp_mul_bound(r2.mul_bound(rhs_end), interval!((0, 0)));
+        assert_eq!(
+            r2.mul_bound(rhs_end)
+                .map(|(a, b)| (a.into_data(), b.into_data()))
+                .unwrap(),
+            (Endpoint::Excluded(0), Endpoint::Excluded(0)),
+        );
         assert_eq!(r2 * r1, interval!(< 0));
     }
 
