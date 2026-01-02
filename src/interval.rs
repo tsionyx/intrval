@@ -249,21 +249,7 @@ impl<T> Interval<T> {
     where
         T: PartialOrd,
     {
-        use Endpoint::{Excluded, Included, Infinite};
-
-        let Ok(bounds) = self.as_ref().into_bounds() else {
-            return true;
-        };
-
-        #[allow(clippy::unnested_or_patterns)]
-        let has_something = match bounds {
-            (Infinite, _) | (_, Infinite) => true,
-            (Included(start), Excluded(end))
-            | (Excluded(start), Included(end))
-            | (Excluded(start), Excluded(end)) => start < end,
-            (Included(start), Included(end)) => start <= end,
-        };
-        !has_something
+        self.as_ref().into_bounds().is_err()
     }
 
     /// Whether the [`Interval`] contains every possible value.
@@ -274,7 +260,7 @@ impl<T> Interval<T> {
     /// Whether the [`Interval`] contains a given point.
     pub fn contains<U>(&self, point: &U) -> bool
     where
-        T: PartialOrd<U>,
+        T: PartialOrd + PartialOrd<U>,
         U: ?Sized + PartialOrd<T>,
     {
         use Endpoint::{Excluded, Included, Infinite};

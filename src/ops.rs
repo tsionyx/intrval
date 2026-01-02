@@ -49,7 +49,10 @@ impl<T> From<RangeToInclusive<T>> for Interval<T> {
 }
 
 #[allow(clippy::match_same_arms)]
-impl<T> RangeBounds<T> for Interval<T> {
+impl<T> RangeBounds<T> for Interval<T>
+where
+    T: PartialOrd,
+{
     fn start_bound(&self) -> Bound<&T> {
         self.as_ref()
             .into_bounds()
@@ -333,7 +336,7 @@ where
     type Output = Interval<Z>;
 
     fn mul(self, rhs: Interval<N>) -> Self::Output {
-        if self.is_empty() || rhs.is_empty() {
+        if self.is_empty() {
             return Interval::Empty;
         }
 
@@ -723,7 +726,12 @@ mod mul_tests {
 
         let (rhs_start, rhs_end) = r1.into_bounds().unwrap();
         cmp_mul_bound(r2.mul_bound(rhs_start), interval!(< 0));
-        cmp_mul_bound(r2.mul_bound(rhs_end), interval!((0, 0)));
+        assert_eq!(
+            r2.mul_bound(rhs_end)
+                .map(|(a, b)| (a.into_data(), b.into_data()))
+                .unwrap(),
+            (Endpoint::Excluded(0), Endpoint::Excluded(0)),
+        );
         assert_eq!(r2 * r1, interval!(< 0));
     }
 

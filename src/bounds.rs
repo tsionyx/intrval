@@ -233,6 +233,7 @@ impl<T: fmt::Debug + fmt::Display> core::error::Error for EmptyIntervalError<T> 
 
 impl<T> Bounded<T> for Interval<T>
 where
+    T: PartialOrd,
     Self: SingletonBounds<T>,
 {
     type Error = EmptyIntervalError<T>;
@@ -264,9 +265,21 @@ where
             Self::Singleton(x) => <Self as SingletonBounds<T>>::value_into_bounds(x),
             Self::GreaterThanOrEqual(a) => (Included(a), Infinite),
             Self::GreaterThan(a) => (Excluded(a), Infinite),
+            Self::Open((ref a, ref b)) if a >= b => {
+                return Err(EmptyIntervalError(self));
+            }
             Self::Open((a, b)) => (Excluded(a), Excluded(b)),
+            Self::LeftOpen((ref a, ref b)) if a >= b => {
+                return Err(EmptyIntervalError(self));
+            }
             Self::LeftOpen((a, b)) => (Excluded(a), Included(b)),
+            Self::RightOpen((ref a, ref b)) if a >= b => {
+                return Err(EmptyIntervalError(self));
+            }
             Self::RightOpen((a, b)) => (Included(a), Excluded(b)),
+            Self::Closed((ref a, ref b)) if a > b => {
+                return Err(EmptyIntervalError(self));
+            }
             Self::Closed((a, b)) => (Included(a), Included(b)),
             Self::Full => (Infinite, Infinite),
         };
@@ -479,10 +492,7 @@ mod tests {
 
         let a = interval!((2, =4));
         let b = interval!((=3, 1));
-        assert_eq!(a.intersect(b).unwrap(), (Included(3), Excluded(1)));
-        assert!(Interval::from_bounds(a.intersect(b).unwrap())
-            .reduce()
-            .is_empty());
+        assert!(a.intersect(b).is_err());
     }
 
     #[test]

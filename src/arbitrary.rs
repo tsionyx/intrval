@@ -233,8 +233,7 @@ mod prop_test {
             if range.contains(&x) {
                 let clamped = range.clamp(x);
                 prop_assert_eq!(clamped, Ok((Ordering::Equal, x)));
-            } else if !range.is_empty() {
-                let (a, b) = range.into_bounds().unwrap();
+            } else if let Ok((a, b)) = range.into_bounds() {
                 let (ordering, clamped) = range.clamp(x).unwrap();
                 match ordering {
                     Ordering::Less => {
@@ -355,15 +354,24 @@ mod prop_test {
 
             #[test]
             fn reversed_has_the_bounds_swapped(range: Interval<Int>) {
-                use crate::bounds::{Bounded as _, Endpoint};
+                use crate::bounds::{Bounded as _, Endpoint::Infinite};
 
-                let (start, end) = range.into_bounds()
-                    .unwrap_or((Endpoint::Infinite, Endpoint::Infinite));
-                let (rev_start, rev_end) = range.reverse().into_bounds()
-                    .unwrap_or((Endpoint::Infinite, Endpoint::Infinite));
-
-                prop_assert_eq!(start.into_bound(), rev_end.into_bound());
-                prop_assert_eq!(end.into_bound(), rev_start.into_bound());
+                match (range.into_bounds(), range.reverse().into_bounds()) {
+                    (Ok((start, end)), Ok((rev_start, rev_end))) => {
+                        prop_assert_eq!(start.into_bound(), rev_end.into_bound());
+                        prop_assert_eq!(end.into_bound(), rev_start.into_bound());
+                    }
+                    // both bounds should be finite and complete a valid interval
+                    (Ok((start, end)), Err(_)) |  (Err(_), Ok((start, end)))  => {
+                        prop_assert!(!matches!(start, Infinite));
+                        prop_assert!(!matches!(end, Infinite));
+                        prop_assert!(start.bound_val().unwrap() <= end.bound_val().unwrap());
+                    }
+                    (Err(_), Err(_)) => {
+                        prop_assert_eq!(range.len().into_diff().unwrap(), 0);
+                        prop_assert_eq!(range.reverse().len().into_diff().unwrap(), 0);
+                    }
+                }
             }
 
             #[test]
