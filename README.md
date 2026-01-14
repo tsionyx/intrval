@@ -191,3 +191,42 @@ assert_eq!(
     interval!(>= -2)
 );
 ```
+
+
+## Features
+
+By default, all the features below are disabled to ensure minimalistic
+no-dependency library.
+
+### serde
+
+Enables the support of `serde::{Serialize, Deserialize}` for `Interval<T>`.
+
+### arbitrary
+
+Enables the `proptest::Arbitrary` for `Interval<T>` along with the property tests
+(could be invoked with `cargo test prop_test --features=arbitrary`).
+
+### singleton
+
+This feature is useful if you want to have a dedicated `Interval::Singleton`
+variant (otherwise represented as `Interval::Closed`).
+This allows to create an `Interval` from a single value
+without cloning it.
+However, to get the bounds of an `Interval`, you have to meet
+the requirement of `T: Clone` again.
+
+The table below summarizes these limitations for the `Interval<T>`
+
+| use case | `singleton` feature | no `singleton` feature |
+|----------|:-------------------:|:----------------------:|
+| create an `Interval` from a single point <br/>(`Singleton::singleton`) | - | `T: Clone` |
+| convert an `Interval` into a pair of `Endpoint`-s<br/>(`Bounded::into_bounds`) | `T: Clone` | - |
+
+There are two helper traits used to implement the desired feature-gated behaviour:
+
+- `trait Singleton` to create a point-sized `Interval` from a single value
+  (when the feature is disabled, create an `Interval::Closed((x.clone(), x))` instead);
+- `trait SingletonBounds` to convert a single value into a pair of `Endpoint`-s
+  (when the feature is disabled, this trait has no methods
+  and implemented for an `Interval<T>` unconditionally).
