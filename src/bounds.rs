@@ -4,8 +4,14 @@ use core::{
     ops::{Add, Bound, Neg, Not, Sub},
 };
 
-use crate::{helper::Pair, singleton::SingletonBounds, Interval, OneOrPair};
+use crate::{
+    helper::{minmax, Pair},
+    singleton::SingletonBounds,
+    Interval, OneOrPair,
+};
 
+// The lack of generic const expressions
+// forces to use `bool` instead of `enum Side {Left, Right}`
 pub const LEFT: bool = false;
 pub const RIGHT: bool = true;
 
@@ -145,7 +151,7 @@ where
 
 /// Used to convert a value into start and end endpoints, consuming the value.
 ///
-/// TODO: consider matching with `cope::ops::IntoBounds` when
+/// TODO: consider matching with `core::ops::IntoBounds` when
 /// the `feature = "range_into_bounds"` gets stabilized.
 pub trait Bounded<T>: Sized {
     /// The error signalling conversion to [`Endpoint`]-s fails.
@@ -190,15 +196,6 @@ pub trait Bounded<T>: Sized {
         T: Ord,
         R: Bounded<T>,
     {
-        // TODO: use `core::cmp::minmax` when stabilized.
-        fn minmax<T: Ord>(v1: T, v2: T) -> [T; 2] {
-            if v2 < v1 {
-                [v2, v1]
-            } else {
-                [v1, v2]
-            }
-        }
-
         let ((self_start, self_end), (other_start, other_end)) = pair_into_bounds(self, other)?;
 
         let [min_start, max_start] = minmax(self_start, other_start);

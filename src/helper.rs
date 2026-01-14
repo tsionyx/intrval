@@ -71,6 +71,15 @@ where
     (f(a), f(b))
 }
 
+// TODO: use `core::cmp::minmax` when stabilized.
+pub fn minmax<T: Ord>(v1: T, v2: T) -> [T; 2] {
+    if v2 < v1 {
+        [v2, v1]
+    } else {
+        [v1, v2]
+    }
+}
+
 /// Either a single value or a pair of values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum OneOrPair<T> {

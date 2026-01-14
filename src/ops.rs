@@ -98,7 +98,17 @@ impl<T: PartialOrd> Interval<T> {
     /// Whether the given point lies completely
     /// to the left/right of the interval,
     /// or maybe completely matches it (in a singleton case).
-    fn point_cmp(&self, point: &T) -> Option<Ordering> {
+    ///
+    /// This should be an impl of `PartialOrd<T> for Interval<T>`,
+    /// but this would require an impl of `PartialEq<T> for Interval<T>`,
+    /// which does not make much sense.
+    ///
+    /// Even worse, multiple existing implementations of
+    /// `PartialEq` for `Interval<T>` breaks
+    /// the type inference system in expressions like
+    /// `interval < interval_like.into()`.
+    /// This lowers much of ergonomics of using compare operators.
+    pub fn point_cmp(&self, point: &T) -> Option<Ordering> {
         use Ordering::{Equal, Greater, Less};
 
         let Ok((start, end)) = self.as_ref().into_bounds() else {
@@ -266,6 +276,11 @@ impl<const SIDE: bool, T: PartialOrd> PartialOrd for Prioritized<Endpoint<SIDE, 
         let to_inf_ordering = Endpoint::<SIDE, T>::to_inf_ordering();
         let to_zero_ordering = to_inf_ordering.reverse();
 
+        // `Low` variant always here to 'shrink' the interval, i.e.
+        // - it is `Greater` than any `Normal` (except equivalent one) for `Endpoint<LEFT, T>`
+        //   (preferrable in `max`, _low_ priority in `min`);
+        // - it is `Less` than any `Normal` (except equivalent one) for `Endpoint<RIGHT, T>`
+        //   (preferrable in `min`, _low_ priority in `max`).
         let (a, b) = map_pair((self, other), |p| p.as_ref().into_data().bound_val());
         match (self, other) {
             (Self::Low(_), Self::Normal(_)) if a.is_some() && b.is_some() && a != b => {
@@ -293,17 +308,6 @@ impl<T> Prioritized<T> {
     fn into_data(self) -> T {
         match self {
             Self::Low(v) | Self::Normal(v) => v,
-        }
-    }
-
-    #[allow(dead_code)]
-    fn map<U, F>(self, mut f: F) -> Prioritized<U>
-    where
-        F: FnMut(T) -> U,
-    {
-        match self {
-            Self::Low(v) => Prioritized::Low(f(v)),
-            Self::Normal(v) => Prioritized::Normal(f(v)),
         }
     }
 

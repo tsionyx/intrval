@@ -4,3 +4,6 @@ Cargo.lock
 # IDE
 .idea/
 .vscode/
+
+# property test regression cases
+proptest-regressions/

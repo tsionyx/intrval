@@ -104,8 +104,8 @@ impl<T> Interval<T> {
     /// Get an [`Interval`] with referenced bound values.
     pub const fn as_ref(&self) -> Interval<&T> {
         map_variants!(self,
-            x => &x,
-            (a, b) => (&a, &b)
+            x => x,
+            (a, b) => (a, b)
         )
     }
 
