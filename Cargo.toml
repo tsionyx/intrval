@@ -10,6 +10,14 @@ categories = ["science", "data-structures"]
 authors = []
 rust-version = "1.68"
 readme = "README.md"
+exclude = [
+    ".gitignore",
+    ".github/",
+    ".cargo/",
+    ".clippy.toml",
+    "examples/",
+    "proptest-regressions/",
+]
 
 
 [dependencies.rustversion]
