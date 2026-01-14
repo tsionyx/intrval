@@ -579,15 +579,18 @@ mod prop_test {
             fn union_is_enclosure_when_intersects(range1: Interval<Int>, range2: Interval<Int>) {
                 use crate::OneOrPair;
 
+                let is_disjoint = range1.is_disjoint(range2.as_ref());
                 let inter = range1 & range2;
                 let enclosed = range1.enclosure(range2).unwrap_or(Interval::Full);
 
                 match range1.union(range2).unwrap_or(OneOrPair::One(Interval::Full)) {
                     OneOrPair::One(i) => {
+                        prop_assert!(!is_disjoint);
                         prop_assert!(!i.is_empty());
                         prop_assert_eq!(i, enclosed);
                     }
                     OneOrPair::Pair((a, b)) => {
+                        prop_assert!(is_disjoint);
                         prop_assert!(inter.is_empty());
                         let restored = Interval::from_bounds((
                             a.into_bounds().unwrap().0,
@@ -602,8 +605,8 @@ mod prop_test {
             fn complement_union_and_intersect(range in one_or_zero_endpoints()) {
                 let complement = (!range).into_single().unwrap();
 
-                assert!((range & complement).is_empty());
-                assert_eq!(range.union(complement)
+                prop_assert!((range & complement).is_empty());
+                prop_assert_eq!(range.union(complement)
                         .unwrap_or_else(|_| Interval::Full.into())
                         .into_single().unwrap(),
                     Interval::Full
@@ -616,10 +619,10 @@ mod prop_test {
                 let complement = (!range).into_single().unwrap().into_closure();
 
                 let inter = range & complement;
-                assert!(!inter.is_empty());
-                assert_eq!(inter.len().into_diff().unwrap(), 0);
+                prop_assert!(!inter.is_empty());
+                prop_assert_eq!(inter.len().into_diff().unwrap(), 0);
 
-                assert_eq!(
+                prop_assert_eq!(
                     (range | complement).into_single().unwrap(),
                     Interval::Full
                 );
@@ -633,8 +636,68 @@ mod prop_test {
                 let complement = (!range).into_single().unwrap().into_interior();
 
                 let inter = range & complement;
-                assert!(inter.is_empty());
-                assert!(matches!(range | complement, OneOrPair::Pair(_)));
+                prop_assert!(inter.is_empty());
+                prop_assert!(matches!(range | complement, OneOrPair::Pair(_)));
+            }
+
+            #[test]
+            fn reflexive_set_operations(range: Interval<Int>) {
+                prop_assert_eq!(range & range, range);
+                prop_assert_eq!((range | range).into_single().unwrap(), range);
+                if !range.is_empty() {
+                    prop_assert_eq!(range.enclosure(range).unwrap(), range);
+                }
+                prop_assert!(range.is_super(range.as_ref()));
+                prop_assert!(range.is_sub(range.as_ref()));
+                prop_assert!(!range.is_disjoint(range.as_ref()));
+            }
+
+            #[test]
+            fn sub_super_union_intersects(range1: Interval<Int>, range2: Interval<Int>) {
+                let first_super = range1.is_super(range2.as_ref());
+                let first_sub = range1.is_sub(range2.as_ref());
+                let second_super = range2.is_super(range1.as_ref());
+                let second_sub = range2.is_sub(range1.as_ref());
+                let inter = range1 & range2;
+                let uni = range1 | range2;
+
+                if first_sub {
+                    prop_assert!(second_super);
+                }
+                if second_sub {
+                    prop_assert!(first_super);
+                }
+
+                match (first_super, second_super) {
+                    (true, true) => {
+                        prop_assert_eq!(range1, range2);
+                        prop_assert!(first_sub);
+                        prop_assert!(second_sub);
+                        prop_assert_eq!(inter, range1);
+                        prop_assert_eq!(uni.into_single().unwrap(), range1);
+                    }
+                    (true, false) => {
+                        prop_assert!(!first_sub);
+                        prop_assert!(second_sub);
+                        prop_assert_eq!(inter, range2);
+                        prop_assert_eq!(uni.into_single().unwrap(), range1);
+                    }
+                    (false, true) => {
+                        prop_assert!(first_sub);
+                        prop_assert!(!second_sub);
+                        prop_assert_eq!(inter, range1);
+                        prop_assert_eq!(uni.into_single().unwrap(), range2);
+                    }
+                    (false, false) => {
+                        prop_assert!(!first_sub);
+                        prop_assert!(!second_sub);
+
+                        prop_assert!(range1.is_super(inter.as_ref()));
+                        prop_assert!(!range1.is_sub(inter.as_ref()));
+                        prop_assert!(range2.is_super(inter.as_ref()));
+                        prop_assert!(!range2.is_sub(inter.as_ref()));
+                    }
+                }
             }
         }
     }

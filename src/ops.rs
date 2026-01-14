@@ -75,11 +75,66 @@ where
 }
 
 impl<T: PartialOrd> Interval<T> {
-    /// Whether the given interval is completely contained
-    /// within this interval.
-    pub fn contains_other<R>(&self, other: R) -> bool
+    /// Returns `true` if there is a non-empty gap between `self` and `other`.
+    /// This implies the `self.union(other)` guaranteed to be a whole `Interval`
+    /// without [jumps](https://en.wikipedia.org/wiki/Classification_of_discontinuities)
+    ///
+    /// This is **not equivalent** to checking for an empty intersection.
+    /// because two intervals can 'touch' at a single point, where
+    /// one of them includes the point and another exclusively approaches it (open interval).
+    /// This case is considered as _not disjoint_ (i.e. _joint_),
+    /// because there is no gap between the intervals, even though their intersection is empty.
+    pub fn is_disjoint<'other, R>(&self, other: R) -> bool
     where
-        R: for<'a> Bounded<&'a T>,
+        T: Ord + 'other,
+        R: Bounded<&'other T>,
+    {
+        // if at least one of the intervals is empty, they cannot be disjoint
+
+        let Ok((self_start, self_end)) = self.as_ref().into_bounds() else {
+            return false;
+        };
+        let Ok((other_start, other_end)) = other.into_bounds() else {
+            return false;
+        };
+
+        let max_start = self_start.max(other_start);
+        let min_end = self_end.min(other_end);
+
+        let empty_intersection = max_start > min_end;
+        // `[x, x)` or `(x, x]` is an empty gap for empty intersection => intervals are joint
+        // `(x, x)` is an empty gap for empty intersection `(x, x)` => intervals are disjoint
+        let empty_gap = !min_end > !max_start;
+        empty_intersection && !empty_gap
+    }
+
+    /// Returns `true` if the interval lies completely within another,
+    /// i.e., `other` contains at least all the values in `self`.
+    pub fn is_sub<'other, R>(&self, other: R) -> bool
+    where
+        T: 'other,
+        R: Bounded<&'other T>,
+    {
+        let Ok((self_start, self_end)) = self.as_ref().into_bounds() else {
+            // the empty interval is contained in any interval
+            return true;
+        };
+
+        let Ok((other_start, other_end)) = other.into_bounds() else {
+            // no interval can be inside an empty interval
+            // (except the empty one, which is handled above)
+            return false;
+        };
+
+        other_start <= self_start && other_end >= self_end
+    }
+
+    /// Returns `true` if the interval completely contains another,
+    /// i.e., `self` contains at least all the values in `other`.
+    pub fn is_super<'other, R>(&self, other: R) -> bool
+    where
+        T: 'other,
+        R: Bounded<&'other T>,
     {
         let Ok((other_start, other_end)) = other.into_bounds() else {
             // the empty interval is contained in any interval

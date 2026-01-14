@@ -30,6 +30,11 @@ _2026-01-16_
   a (possibly infinite) point with its
   [neighbourhood](https://en.wikipedia.org/wiki/Neighbourhood_(mathematics)#Neighbourhood_of_a_point).
 
+- improve set operations for `Interval<T>`:
+  - rename the `contains_other` into `is_super`;
+  - add the `is_sub` (reverse to `is_super`) method;
+  - add the `is_disjoint` to check whether the two `Interval`-s could be merged into a single one;
+
 
 # v0.1.0
 
