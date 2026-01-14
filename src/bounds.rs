@@ -15,7 +15,7 @@ use crate::{
 pub const LEFT: bool = false;
 pub const RIGHT: bool = true;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, Eq, Hash)]
 /// The bound of an interval.
 pub enum Endpoint<const SIDE: bool, T> {
     /// The point is included in the interval.
@@ -202,16 +202,13 @@ pub trait Bounded<T>: Sized {
         let [min_end, max_end] = minmax(self_end, other_end);
 
         let are_disjoint = {
-            let intersection = Interval::from_bounds((max_start.as_ref(), min_end.as_ref()));
-            let gap = intersection.reverse();
+            let (l, r) = (max_start.as_ref(), min_end.as_ref());
+            let empty_intersection = l > r;
 
-            intersection.is_empty()
-                && (
-                    // `[x, x)` or `(x, x]` is an empty gap for empty intersection => intervals are joint
-                    !gap.is_empty() ||
-                    // `(x, x)` is an empty gap for empty intersection `(x, x)` => intervals are disjoint
-                    intersection == gap
-                )
+            // `[x, x)` or `(x, x]` is an empty gap for empty intersection => intervals are joint
+            // `(x, x)` is an empty gap for empty intersection `(x, x)` => intervals are disjoint
+            let empty_gap = !r > !l;
+            empty_intersection && !empty_gap
         };
 
         let one_or_pair = if are_disjoint {
@@ -328,32 +325,29 @@ where
     }
 }
 
+pub const fn inf_ordering(side: bool) -> Ordering {
+    #[allow(clippy::match_bool)]
+    match side {
+        LEFT => Ordering::Less,
+        RIGHT => Ordering::Greater,
+    }
+}
+
 impl<const SIDE: bool, T> Endpoint<SIDE, T> {
-    /// Represent the result of operation `Infinite.cmp(Bounded)`,
-    /// i.e. the comparison of infinity with the finite number.
-    ///
-    /// E.g.:
-    /// - for the `LEFT` side: `Infinite == -inf < x == Bounded`;
-    /// - for the `RIGHT` side: `Infinite == +inf > x == Bounded`;
-    ///
-    /// This is also the result of operation of comparing `Included` with `Excluded` bounds with the same underlying value:
-    /// - for the `LEFT` side: `Included(x) < Excluded(x) ~= Included(x + epsilon)`;
-    /// - for the `RIGHT` side: `Included(x) > Excluded(x) ~= Included(x - epsilon)`;
-    pub(crate) const fn to_inf_ordering() -> Ordering {
-        #[allow(clippy::match_bool)]
-        match SIDE {
-            // `(a, ...)` can also be represented as `[a + epsilon, ...)`
-            // which leads to `[a, ...) < [a + epsilon, ...)`,
-            // so `Included(a) < Included(a + epsilon) ~= Excluded(a)`
-            LEFT => Ordering::Less,
-            // `(..., b)` can also be represented as `(..., b - epsilon]`
-            // which leads to `(..., b] > (..., b - epsilon]`
-            // so `Included(b) > Included(b - epsilon) ~= Excluded(b)`
-            RIGHT => Ordering::Greater,
+    /// Represent the direction of approaching to the endpoint as an [`Ordering`]:
+    /// - `Ordering::Greater` for left endpoints (i.e. approaching from the right):
+    ///   `(a, ...)` can also be represented as `[a + epsilon, ...)`
+    /// - `Ordering::Less` for right endpoints (i.e. approaching from the left):
+    ///   `(..., b)` can also be represented as `(..., b - epsilon]`.
+    const fn value_approaching(&self) -> Ordering {
+        match self {
+            Self::Included(_) => Ordering::Equal,
+            Self::Excluded(_) | Self::Infinite => inf_ordering(SIDE).reverse(),
         }
     }
 
-    pub(crate) const fn as_ref(&self) -> Endpoint<SIDE, &T> {
+    /// Get an `Endpoint` with referenced point value.
+    pub const fn as_ref(&self) -> Endpoint<SIDE, &T> {
         match self {
             Self::Included(v) => Endpoint::Included(v),
             Self::Excluded(v) => Endpoint::Excluded(v),
@@ -375,29 +369,58 @@ impl<const SIDE: bool, T> Endpoint<SIDE, T> {
     }
 
     pub(crate) const fn bound_val(&self) -> Option<&T> {
+        match self.as_ext_point() {
+            ExtPoint::Finite((val, _ordering)) => Some(val),
+            ExtPoint::Infinite(_) => None,
+        }
+    }
+
+    /// Get the underlying value and the direction of the endpoint.
+    /// The direction is represented as an [`Ordering`]:
+    /// - `Ordering::Equal` for included endpoints (either left or right);
+    /// - `Ordering::Less` for excluded right endpoints (i.e. approaching from the left);
+    /// - `Ordering::Greater` for excluded left endpoints (i.e. approaching from the right).
+    pub(crate) const fn as_ext_point(&self) -> ExtPoint<&T> {
+        let ordering = self.value_approaching();
         match self {
-            Self::Included(v) | Self::Excluded(v) => Some(v),
-            Self::Infinite => None,
+            Self::Included(v) | Self::Excluded(v) => ExtPoint::Finite((v, ordering)),
+            Self::Infinite => ExtPoint::Infinite(SIDE),
         }
     }
 }
 
-impl<const SIDE: bool, T: PartialOrd> PartialOrd for Endpoint<SIDE, T> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// The value of an endpoint related to a specific point
+/// (along with the direction of approaching to this point) or infinity.
+pub enum ExtPoint<T> {
+    Finite((T, Ordering)),
+    Infinite(bool),
+}
+
+impl<T: PartialOrd> PartialOrd for ExtPoint<T> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        use Endpoint::{Excluded, Included, Infinite};
-
-        let to_inf_ordering = Self::to_inf_ordering();
-        let to_zero_ordering = to_inf_ordering.reverse();
-
         match (self, other) {
-            (Infinite, Infinite) => Some(Ordering::Equal),
-            (Infinite, _) => Some(to_inf_ordering),
-            (_, Infinite) => Some(to_zero_ordering),
-
-            (Included(a), Included(b)) | (Excluded(a), Excluded(b)) => a.partial_cmp(b),
-            (Included(i), Excluded(e)) => i.partial_cmp(e).map(|x| x.then(to_inf_ordering)),
-            (Excluded(e), Included(i)) => e.partial_cmp(i).map(|x| x.then(to_zero_ordering)),
+            (Self::Infinite(side_a), Self::Infinite(side_b)) => Some(side_a.cmp(side_b)),
+            (Self::Infinite(side), Self::Finite(_)) => Some(inf_ordering(*side)),
+            (Self::Finite(_), Self::Infinite(side)) => Some(inf_ordering(!*side)),
+            (Self::Finite(a), Self::Finite(b)) => a.partial_cmp(b),
         }
+    }
+}
+
+impl<const SIDE_L: bool, const SIDE_R: bool, T: PartialEq> PartialEq<Endpoint<SIDE_R, T>>
+    for Endpoint<SIDE_L, T>
+{
+    fn eq(&self, other: &Endpoint<SIDE_R, T>) -> bool {
+        self.as_ext_point() == other.as_ext_point()
+    }
+}
+
+impl<const SIDE_L: bool, const SIDE_R: bool, T: PartialOrd> PartialOrd<Endpoint<SIDE_R, T>>
+    for Endpoint<SIDE_L, T>
+{
+    fn partial_cmp(&self, other: &Endpoint<SIDE_R, T>) -> Option<Ordering> {
+        self.as_ext_point().partial_cmp(&other.as_ext_point())
     }
 }
 
@@ -733,5 +756,29 @@ mod tests {
         assert!(right(Included(5)) > right(Excluded(5)));
         // '<100' < '<=100'
         assert!(right(Excluded(100)) < right(Included(100)));
+    }
+
+    #[test]
+    fn cmp_left_and_right_inf() {
+        use Bound::{Excluded, Included, Unbounded};
+        assert!(left(Unbounded) < right(Unbounded));
+        assert!(left(Unbounded) < right(Included(i32::MIN)));
+        assert!(left(Unbounded) < right(Excluded(i32::MIN)));
+
+        assert!(right(Unbounded) > left(Unbounded));
+        assert!(right(Unbounded) > left(Included(i32::MAX)));
+        assert!(right(Unbounded) > left(Excluded(i32::MAX)));
+    }
+
+    #[test]
+    fn cmp_left_and_right_finite() {
+        use Bound::{Excluded, Included};
+        assert!(left(Included(-100)) < right(Included(100)));
+        assert!(left(Included(-100)) < right(Included(0)));
+
+        assert!(left(Included(100)) == right(Included(100)));
+        assert!(left(Included(100)) > right(Excluded(100)));
+        assert!(left(Excluded(100)) > right(Included(100)));
+        assert!(left(Excluded(100)) > right(Excluded(100)));
     }
 }

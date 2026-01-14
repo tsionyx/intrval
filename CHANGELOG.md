@@ -20,6 +20,11 @@ _2026-01-16_
   but implementing the latter would result in poor ergonomics
   in other parts of codebase.
 
+- improve the `Partial{Eq,Ord}` for `Endpoint` by enabling arbitrary `SIDE`-s to be comparable.
+  This became possible thanks to use of `ExtPoint` representing
+  a (possibly infinite) point with its
+  [neighbourhood](https://en.wikipedia.org/wiki/Neighbourhood_(mathematics)#Neighbourhood_of_a_point).
+
 
 # v0.1.0
 

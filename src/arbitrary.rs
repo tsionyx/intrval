@@ -268,7 +268,7 @@ mod prop_test {
         #[test]
         fn contains_implies_clamp_preserving(range: Interval<Int>, x in params_range()) {
             use core::cmp::Ordering;
-            use crate::bounds::Endpoint;
+            use crate::bounds::{Endpoint, RIGHT, LEFT};
 
             fn bound_included<const SIDE: bool, T>(b: Endpoint<SIDE, T>) -> Option<T> {
                 if let Endpoint::Included(v) = b {
@@ -285,7 +285,7 @@ mod prop_test {
                 let (ordering, clamped) = range.clamp(x).unwrap();
                 match ordering {
                     Ordering::Less => {
-                        prop_assert_eq!(b, Endpoint::Excluded(clamped));
+                        prop_assert_eq!(b, Endpoint::<RIGHT, _>::Excluded(clamped));
                     }
                     Ordering::Equal => {
                         prop_assert_ne!(clamped, x);
@@ -298,7 +298,7 @@ mod prop_test {
                         );
                     }
                     Ordering::Greater => {
-                        prop_assert_eq!(a, Endpoint::Excluded(clamped));
+                        prop_assert_eq!(a, Endpoint::<LEFT, _>::Excluded(clamped));
                     }
                 }
             }

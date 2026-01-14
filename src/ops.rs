@@ -7,7 +7,7 @@ use core::{
 };
 
 use crate::{
-    bounds::{Bounded, Endpoint, LBound, RBound, LEFT, RIGHT},
+    bounds::{inf_ordering, Bounded, Endpoint, LBound, RBound, LEFT, RIGHT},
     helper::map_pair,
     Interval, OneOrPair, Zero,
 };
@@ -273,7 +273,7 @@ enum Prioritized<T> {
 
 impl<const SIDE: bool, T: PartialOrd> PartialOrd for Prioritized<Endpoint<SIDE, T>> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        let to_inf_ordering = Endpoint::<SIDE, T>::to_inf_ordering();
+        let to_inf_ordering = inf_ordering(SIDE);
         let to_zero_ordering = to_inf_ordering.reverse();
 
         // `Low` variant always here to 'shrink' the interval, i.e.
