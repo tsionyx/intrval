@@ -246,7 +246,7 @@ mod prop_test {
         #[test]
         fn empty_is_reduced_and_not_clamped(range: Interval<Int>, x in params_range()) {
             let inv1 = range.is_empty();
-            let inv2 = range.reduce() == interval!(_);
+            let inv2 = range == interval!(_);
             let inv3 = range.clamp(x).is_err();
             let invariants = [inv1, inv2, inv3];
             prop_assert!(invariants.iter().all(|&b| b) || invariants.iter().all(|&b| !b));
@@ -314,13 +314,13 @@ mod prop_test {
             // i + EMPTY == i
             fn adding_empty_interval_is_preserving(range in non_empty()) {
                 let sum = range + interval!(_: Int);
-                prop_assert_eq!(range.reduce(), sum.reduce());
+                prop_assert_eq!(range, sum);
 
                 let sum = range + interval!([0, -1]); // also empty
-                prop_assert_eq!(range.reduce(), sum.reduce());
+                prop_assert_eq!(range, sum);
 
                 let sum = interval!((2, =2)) + range; // also empty
-                prop_assert_eq!(range.reduce(), sum.reduce());
+                prop_assert_eq!(range, sum);
             }
 
             #[test]
@@ -344,7 +344,7 @@ mod prop_test {
 
                 let scalar_sum = range + delta;
                 let sum = range + Interval::singleton(delta);
-                prop_assert_eq!(sum.reduce(), scalar_sum.reduce());
+                prop_assert_eq!(sum, scalar_sum);
             }
 
             #[test]
@@ -361,10 +361,10 @@ mod prop_test {
             // i - EMPTY == i
             fn sub_empty_interval_is_preserving(range in non_empty()) {
                 let diff = range - interval!(_: Int);
-                prop_assert_eq!(range.reduce(), diff.reduce());
+                prop_assert_eq!(range, diff);
 
                 let diff = range - interval!([0, -1]); // also empty
-                prop_assert_eq!(range.reduce(), diff.reduce());
+                prop_assert_eq!(range, diff);
             }
 
             #[test]
@@ -372,10 +372,10 @@ mod prop_test {
                 range in BoundedInterval::arbitrary_with(negated_interval()).prop_map(|i| i.0),
             ) {
                 let diff = interval!(_: Int) - range;
-                prop_assert_eq!(range.reduce(), -diff.reduce());
+                prop_assert_eq!(range, -diff);
 
                 let diff = interval!((2, =2)) - range; // also empty
-                prop_assert_eq!(range.reduce(), -diff.reduce());
+                prop_assert_eq!(range, -diff);
             }
 
             #[test]
@@ -403,7 +403,7 @@ mod prop_test {
 
                 let scalar_diff = range - delta;
                 let diff = range - Interval::singleton(delta);
-                prop_assert_eq!(diff.reduce(), scalar_diff.reduce());
+                prop_assert_eq!(diff, scalar_diff);
             }
 
             #[test]
@@ -506,7 +506,7 @@ mod prop_test {
                 // skip the singleton interval as it
                 // will be restored as a closed interval
                 if let Interval::Singleton(_) = range {
-                    prop_assert_eq!(range, restored.reduce());
+                    prop_assert_eq!(range, restored);
                     return Ok(());
                 }
 
@@ -554,24 +554,24 @@ mod prop_test {
             #[test]
             fn intersect_on_err_returns_original(range1: Interval<Int>, range2: Interval<Int>) {
                 if let Err((a, b)) = range1.intersect(range2) {
-                    prop_assert_eq!(a.reduce(), range1.reduce());
-                    prop_assert_eq!(b.reduce(), range2.reduce());
+                    prop_assert_eq!(a, range1);
+                    prop_assert_eq!(b, range2);
                 }
             }
 
             #[test]
             fn union_on_err_returns_original(range1: Interval<Int>, range2: Interval<Int>) {
                 if let Err((a, b)) = range1.union(range2) {
-                    prop_assert_eq!(a.reduce(), range1.reduce());
-                    prop_assert_eq!(b.reduce(), range2.reduce());
+                    prop_assert_eq!(a, range1);
+                    prop_assert_eq!(b, range2);
                 }
             }
 
             #[test]
             fn enclosure_on_err_returns_original(range1: Interval<Int>, range2: Interval<Int>) {
                 if let Err((a, b)) = range1.enclosure(range2) {
-                    prop_assert_eq!(a.reduce(), range1.reduce());
-                    prop_assert_eq!(b.reduce(), range2.reduce());
+                    prop_assert_eq!(a, range1);
+                    prop_assert_eq!(b, range2);
                 }
             }
 

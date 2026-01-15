@@ -239,7 +239,7 @@ pub trait Bounded<T>: Sized {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy)]
 /// The operation error indicating that the interval is empty.
 pub struct EmptyIntervalError<T>(Interval<T>);
 
@@ -591,17 +591,17 @@ mod tests {
         let a = interval!([1, 2]);
         let b = interval!([3, 4]);
         assert_eq!(a.intersect(b).unwrap(), interval!([3, 2]));
-        assert!((a & b).reduce().is_empty());
+        assert!((a & b).is_empty());
 
         let a = interval!(>6);
         let b = interval!(<3);
         assert_eq!(a.intersect(b).unwrap(), interval!((6, 3)));
-        assert!((a & b).reduce().is_empty());
+        assert!((a & b).is_empty());
 
         let a = interval!(>=6);
         let b = interval!(<6);
         assert_eq!(a.intersect(b).unwrap(), interval!((=6, 6)));
-        assert!((a & b).reduce().is_empty());
+        assert!((a & b).is_empty());
 
         let a = interval!((2, =4));
         let b = interval!((=3, 1));
@@ -613,12 +613,12 @@ mod tests {
         let a = interval!(>=6);
         let b = interval!(<=6);
         assert_eq!(a.intersect(b).unwrap(), interval!([6, 6]));
-        assert_eq!((a & b).reduce(), interval!(=6));
+        assert_eq!((a & b), interval!(=6));
 
         let a = interval!((2, =3));
         let b = interval!((=3, 8));
         assert_eq!(a.intersect(b).unwrap(), interval!([3, 3]));
-        assert_eq!((a & b).reduce(), interval!(==3));
+        assert_eq!((a & b), interval!(==3));
     }
 
     #[test]

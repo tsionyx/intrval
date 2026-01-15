@@ -12,6 +12,11 @@ _2026-01-16_
   - [_sparse_ protocol](https://blog.rust-lang.org/2023/03/09/Rust-1.68.0/#cargo-s-sparse-protocol)
     for the index of crate dependencies (_**1.68**_);
 
+- `impl<T: PartialOrd> PartialEq for Interval<T>` to allow to compare
+  different representations without `reduce`-ing:
+  - all _degenerate_ (empty) intervals are equal to each other;
+  - the `Singleton(x)` equals to `Closed((x, x))`;
+
 ## Changed
 
 - `Interval::point_cmp` to answer whether a point `T`

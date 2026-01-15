@@ -1,4 +1,4 @@
-use core::cmp::Ordering;
+use core::{cmp::Ordering, hash::Hash};
 
 use crate::{
     bounds::{Bounded, Endpoint},
@@ -6,7 +6,7 @@ use crate::{
     singleton::SingletonBounds,
 };
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "SCREAMING_SNAKE_CASE"))]
 /// Represent the subset of domain values for some `T: PartialOrd`.
@@ -86,6 +86,29 @@ macro_rules! map_variants {
             Interval::Full => Interval::Full,
         }
     };
+}
+
+impl<T: PartialOrd> PartialEq for Interval<T> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self.as_ref().into_bounds(), other.as_ref().into_bounds()) {
+            (Ok(l), Ok(r)) => l == r,
+            (Ok(_), Err(_)) | (Err(_), Ok(_)) => false,
+            (Err(_), Err(_)) => true,
+        }
+    }
+}
+
+impl<T: PartialOrd> Eq for Interval<T> {}
+
+impl<T: PartialOrd + Hash> Hash for Interval<T> {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        if let Ok(bounds) = self.as_ref().into_bounds() {
+            true.hash(state);
+            bounds.hash(state);
+        } else {
+            false.hash(state);
+        }
+    }
 }
 
 impl<T> Interval<T> {
