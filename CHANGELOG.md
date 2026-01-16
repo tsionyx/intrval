@@ -37,6 +37,10 @@ _2026-01-16_
 
 - minor changes for the `interval!` macro to allow to specify type of the produced `Interval`.
 
+## Added
+
+- `Interval::as_ref_bounds` as a synonym for `Interval::into_bounds(Interval::as_ref)`;
+
 
 # v0.1.0
 

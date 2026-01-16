@@ -316,6 +316,19 @@ where
     }
 }
 
+impl<T> Interval<T> {
+    /// Get referenced interval's bounds.
+    ///
+    /// # Errors
+    /// [`EmptyIntervalError`] wrapping a reference to itself when the interval is empty.
+    pub fn as_ref_bounds(&self) -> Result<BothBounds<&T>, <Interval<&T> as Bounded<&T>>::Error>
+    where
+        for<'a> Interval<&'a T>: Bounded<&'a T>,
+    {
+        self.as_ref().into_bounds()
+    }
+}
+
 impl<T> From<BothBounds<T>> for Interval<T>
 where
     Self: Bounded<T>,

@@ -172,7 +172,7 @@ mod prop_test {
 
     fn one_or_zero_endpoints() -> impl Strategy<Value = Interval<Int>> {
         any::<Interval<Int>>().prop_filter("exclude both-bounded", |i| {
-            if let Ok((a, b)) = i.as_ref().into_bounds() {
+            if let Ok((a, b)) = i.as_ref_bounds() {
                 matches!(a, Infinite) || matches!(b, Infinite)
             } else {
                 true
@@ -182,7 +182,7 @@ mod prop_test {
 
     fn single_endpoint() -> impl Strategy<Value = Interval<Int>> {
         any::<Interval<Int>>().prop_filter("only take one side-unbounded", |i| {
-            if let Ok((a, b)) = i.as_ref().into_bounds() {
+            if let Ok((a, b)) = i.as_ref_bounds() {
                 matches!(a, Infinite) ^ matches!(b, Infinite)
             } else {
                 false

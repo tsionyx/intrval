@@ -90,7 +90,7 @@ macro_rules! map_variants {
 
 impl<T: PartialOrd> PartialEq for Interval<T> {
     fn eq(&self, other: &Self) -> bool {
-        match (self.as_ref().into_bounds(), other.as_ref().into_bounds()) {
+        match (self.as_ref_bounds(), other.as_ref_bounds()) {
             (Ok(l), Ok(r)) => l == r,
             (Ok(_), Err(_)) | (Err(_), Ok(_)) => false,
             (Err(_), Err(_)) => true,
@@ -102,7 +102,7 @@ impl<T: PartialOrd> Eq for Interval<T> {}
 
 impl<T: PartialOrd + Hash> Hash for Interval<T> {
     fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
-        if let Ok(bounds) = self.as_ref().into_bounds() {
+        if let Ok(bounds) = self.as_ref_bounds() {
             true.hash(state);
             bounds.hash(state);
         } else {
@@ -272,7 +272,7 @@ impl<T> Interval<T> {
     where
         T: PartialOrd,
     {
-        self.as_ref().into_bounds().is_err()
+        self.as_ref_bounds().is_err()
     }
 
     /// Whether the [`Interval`] contains every possible value.
@@ -288,7 +288,7 @@ impl<T> Interval<T> {
     {
         use Endpoint::{Excluded, Included, Infinite};
 
-        let Ok((a, b)) = self.as_ref().into_bounds() else {
+        let Ok((a, b)) = self.as_ref_bounds() else {
             // an empty interval does not contain any point
             return false;
         };
@@ -329,7 +329,7 @@ impl<T> Interval<T> {
     where
         T: Clone + PartialOrd + core::ops::Sub,
     {
-        let Ok((a, b)) = self.as_ref().into_bounds() else {
+        let Ok((a, b)) = self.as_ref_bounds() else {
             return Size::Empty;
         };
 
@@ -362,7 +362,7 @@ impl<T> Interval<T> {
     where
         T: Clone + PartialOrd,
     {
-        let Ok((a, b)) = self.as_ref().into_bounds() else {
+        let Ok((a, b)) = self.as_ref_bounds() else {
             return Err(x);
         };
 

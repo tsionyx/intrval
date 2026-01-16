@@ -54,14 +54,12 @@ where
     T: PartialOrd,
 {
     fn start_bound(&self) -> Bound<&T> {
-        self.as_ref()
-            .into_bounds()
+        self.as_ref_bounds()
             .map_or(Bound::Unbounded, |(a, _b)| a.into_bound())
     }
 
     fn end_bound(&self) -> Bound<&T> {
-        self.as_ref()
-            .into_bounds()
+        self.as_ref_bounds()
             .map_or(Bound::Unbounded, |(_a, b)| b.into_bound())
     }
 
@@ -91,7 +89,7 @@ impl<T: PartialOrd> Interval<T> {
     {
         // if at least one of the intervals is empty, they cannot be disjoint
 
-        let Ok((self_start, self_end)) = self.as_ref().into_bounds() else {
+        let Ok((self_start, self_end)) = self.as_ref_bounds() else {
             return false;
         };
         let Ok((other_start, other_end)) = other.into_bounds() else {
@@ -115,7 +113,7 @@ impl<T: PartialOrd> Interval<T> {
         T: 'other,
         R: Bounded<&'other T>,
     {
-        let Ok((self_start, self_end)) = self.as_ref().into_bounds() else {
+        let Ok((self_start, self_end)) = self.as_ref_bounds() else {
             // the empty interval is contained in any interval
             return true;
         };
@@ -141,7 +139,7 @@ impl<T: PartialOrd> Interval<T> {
             return true;
         };
 
-        let Ok((self_start, self_end)) = self.as_ref().into_bounds() else {
+        let Ok((self_start, self_end)) = self.as_ref_bounds() else {
             // no interval can be inside an empty interval
             // (except the empty one, which is handled above)
             return false;
@@ -166,7 +164,7 @@ impl<T: PartialOrd> Interval<T> {
     pub fn point_cmp(&self, point: &T) -> Option<Ordering> {
         use Ordering::{Equal, Greater, Less};
 
-        let Ok((start, end)) = self.as_ref().into_bounds() else {
+        let Ok((start, end)) = self.as_ref_bounds() else {
             return None;
         };
 
@@ -400,7 +398,7 @@ impl<T> Interval<T> {
         let (a, b) = match rhs {
             Endpoint::Included(n) => (self * n).into_bounds()?,
             Endpoint::Excluded(n) => {
-                let preserve_zero = match self.as_ref().into_bounds() {
+                let preserve_zero = match self.as_ref_bounds() {
                     Ok((ref_a, ref_b)) => [ref_a.into_bound(), ref_b.into_bound()]
                         .contains(&Bound::Included(&zero_point)),
                     Err(_) => false,
