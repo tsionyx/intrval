@@ -7,8 +7,9 @@ use core::{
 };
 
 use crate::{
-    bounds::{inf_ordering, Bounded, Endpoint, IntoBounds, LBound, RBound, SetOps, LEFT, RIGHT},
+    bounds::{inf_ordering, Bounded, Endpoint, IntoBounds, LBound, RBound, LEFT, RIGHT},
     helper::map_pair,
+    set::SetOps,
     Interval, OneOrPair, Zero,
 };
 
@@ -69,111 +70,6 @@ where
         U: ?Sized + PartialOrd<T>,
     {
         self.contains(item)
-    }
-}
-
-impl<T: PartialOrd> Interval<T> {
-    /// Returns `true` if there is a non-empty gap between `self` and `other`.
-    /// This implies the `self.union(other)` guaranteed to be a whole `Interval`
-    /// without [jumps](https://en.wikipedia.org/wiki/Classification_of_discontinuities)
-    ///
-    /// This is **not equivalent** to checking for an empty intersection.
-    /// because two intervals can 'touch' at a single point, where
-    /// one of them includes the point and another exclusively approaches it (open interval).
-    /// This case is considered as _not disjoint_ (i.e. _joint_),
-    /// because there is no gap between the intervals, even though their intersection is empty.
-    pub fn is_disjoint<'other, R>(&self, other: R) -> bool
-    where
-        T: Ord + 'other,
-        R: IntoBounds<&'other T>,
-    {
-        // if at least one of the intervals is empty, they cannot be disjoint
-
-        let Ok((self_start, self_end)) = self.as_ref_bounds() else {
-            return false;
-        };
-        let Ok((other_start, other_end)) = other.into_bounds() else {
-            return false;
-        };
-
-        let max_start = self_start.max(other_start);
-        let min_end = self_end.min(other_end);
-
-        let empty_intersection = max_start > min_end;
-        // `[x, x)` or `(x, x]` is an empty gap for empty intersection => intervals are joint
-        // `(x, x)` is an empty gap for empty intersection `(x, x)` => intervals are disjoint
-        let empty_gap = !min_end > !max_start;
-        empty_intersection && !empty_gap
-    }
-
-    /// Returns `true` if the interval lies completely within another,
-    /// i.e., `other` contains at least all the values in `self`.
-    pub fn is_sub<'other, R>(&self, other: R) -> bool
-    where
-        T: 'other,
-        R: IntoBounds<&'other T>,
-    {
-        let Ok((self_start, self_end)) = self.as_ref_bounds() else {
-            // the empty interval is contained in any interval
-            return true;
-        };
-
-        let Ok((other_start, other_end)) = other.into_bounds() else {
-            // no interval can be inside an empty interval
-            // (except the empty one, which is handled above)
-            return false;
-        };
-
-        other_start <= self_start && other_end >= self_end
-    }
-
-    /// Returns `true` if the interval completely contains another,
-    /// i.e., `self` contains at least all the values in `other`.
-    pub fn is_super<'other, R>(&self, other: R) -> bool
-    where
-        T: 'other,
-        R: IntoBounds<&'other T>,
-    {
-        let Ok((other_start, other_end)) = other.into_bounds() else {
-            // the empty interval is contained in any interval
-            return true;
-        };
-
-        let Ok((self_start, self_end)) = self.as_ref_bounds() else {
-            // no interval can be inside an empty interval
-            // (except the empty one, which is handled above)
-            return false;
-        };
-
-        self_start <= other_start && self_end >= other_end
-    }
-
-    /// Whether the given point lies completely
-    /// to the left/right of the interval,
-    /// or maybe completely matches it (in a singleton case).
-    ///
-    /// This should be an impl of `PartialOrd<T> for Interval<T>`,
-    /// but this would require an impl of `PartialEq<T> for Interval<T>`,
-    /// which does not make much sense.
-    ///
-    /// Even worse, multiple existing implementations of
-    /// `PartialEq` for `Interval<T>` breaks
-    /// the type inference system in expressions like
-    /// `interval < interval_like.into()`.
-    /// This lowers much of ergonomics of using compare operators.
-    pub fn point_cmp(&self, point: &T) -> Option<Ordering> {
-        use Ordering::{Equal, Greater, Less};
-
-        let Ok((start, end)) = self.as_ref_bounds() else {
-            return None;
-        };
-
-        match (start.partial_cmp(&point)?, end.partial_cmp(&point)?) {
-            (Less, Less | Equal) | (Equal, Less) => Some(Less),
-            (Equal, Equal) => Some(Equal),
-            (Equal, Greater) | (Greater, Equal | Greater) => Some(Greater),
-            (Less, Greater) | (Greater, Less) => None,
-        }
     }
 }
 
@@ -381,6 +277,37 @@ impl<T> From<T> for Prioritized<T> {
 type PrioritizedBounds<T> = (Prioritized<LBound<T>>, Prioritized<RBound<T>>);
 
 impl<T> Interval<T> {
+    /// Whether the given point lies completely
+    /// to the left/right of the interval,
+    /// or maybe completely matches it (in a singleton case).
+    ///
+    /// This should be an impl of `PartialOrd<T> for Interval<T>`,
+    /// but this would require an impl of `PartialEq<T> for Interval<T>`,
+    /// which does not make much sense.
+    ///
+    /// Even worse, multiple existing implementations of
+    /// `PartialEq` for `Interval<T>` breaks
+    /// the type inference system in expressions like
+    /// `interval < interval_like.into()`.
+    /// This lowers much of ergonomics of using compare operators.
+    pub fn point_cmp(&self, point: &T) -> Option<Ordering>
+    where
+        T: PartialOrd,
+    {
+        use Ordering::{Equal, Greater, Less};
+
+        let Ok((start, end)) = self.as_ref_bounds() else {
+            return None;
+        };
+
+        match (start.partial_cmp(&point)?, end.partial_cmp(&point)?) {
+            (Less, Less | Equal) | (Equal, Less) => Some(Less),
+            (Equal, Equal) => Some(Equal),
+            (Equal, Greater) | (Greater, Equal | Greater) => Some(Greater),
+            (Less, Greater) | (Greater, Less) => None,
+        }
+    }
+
     /// Auxiliary function to help with multiplying two [`Intervals`].
     fn mul_bound<const SIDE: bool, N, Z, E>(
         self,
@@ -534,7 +461,7 @@ where
 
 impl<T, U> BitAnd<U> for Interval<T>
 where
-    Self: SetOps<T>,
+    Self: SetOps<T> + From<<Self as IntoBounds<T>>::Error>,
     T: Ord,
     U: IntoBounds<T> + From<U::Error>,
 {
@@ -547,7 +474,7 @@ where
 
 impl<T, U> BitOr<U> for Interval<T>
 where
-    Self: SetOps<T>,
+    Self: SetOps<T> + From<<Self as IntoBounds<T>>::Error>,
     T: Ord,
     U: IntoBounds<T> + From<U::Error>,
 {

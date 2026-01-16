@@ -30,6 +30,12 @@ _2026-01-16_
     - `.intersect(self, other: impl IntoBounds)`;
     - `.union(self, other: impl IntoBounds)`;
     - `.enclosure(self, other: impl IntoBounds)`;
+    - `.is_disjoint(&self, other: impl IntoBounds<&T>)`
+      to check whether the two `Interval`-s are separated
+      and could not be merged into a single one;
+    - `.is_sub(&self, other: impl IntoBounds<&T>)` (reverse to `is_super`);
+    - `.is_super(&self, other: impl IntoBounds<&T>)`
+      (previously named `Interval::contains_other`);
 
 - `Interval::point_cmp` to answer whether a point `T`
   lies to the right/left of the `Interval<T>`.
@@ -41,11 +47,6 @@ _2026-01-16_
   This became possible thanks to use of `ExtPoint` representing
   a (possibly infinite) point with its
   [neighbourhood](https://en.wikipedia.org/wiki/Neighbourhood_(mathematics)#Neighbourhood_of_a_point).
-
-- improve set operations for `Interval<T>`:
-  - rename the `contains_other` into `is_super`;
-  - add the `is_sub` (reverse to `is_super`) method;
-  - add the `is_disjoint` to check whether the two `Interval`-s could be merged into a single one;
 
 - minor changes for the `interval!` macro to allow to specify type of the produced `Interval`.
 

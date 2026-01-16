@@ -130,8 +130,9 @@ where
 #[cfg(test)]
 mod prop_test {
     use crate::{
-        bounds::{Endpoint::Infinite, IntoBounds as _, SetOps as _},
+        bounds::{Endpoint::Infinite, IntoBounds as _},
         interval,
+        set::SetOps as _,
     };
 
     use super::*;

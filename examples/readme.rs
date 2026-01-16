@@ -102,7 +102,19 @@ fn main() {
 
     // ===== set operations =====
     let igt2 = interval!(> 2);
+    let igte2 = interval!(>= 2);
     let igt10 = interval!(> 10);
+
+    assert!(igte2.is_super(&igt2));
+    assert!(igt2.is_sub(&igte2));
+    assert!(!igt2.is_super(&igte2));
+    assert!(!igte2.is_sub(&igt2));
+    assert!(igt2.is_super(&igt10));
+    assert!(igt10.is_sub(&igt2));
+    assert!(igt2.is_disjoint(&interval!(< 0)));
+    assert!(igt2.is_disjoint(&interval!(< 2)));
+    assert!(!igt2.is_disjoint(&interval!(<= 2)));
+
     assert_eq!(igt2.complement().into_single().unwrap(), interval!(<= 2));
     // `.complement` is aliased with `!`
     assert_eq!(

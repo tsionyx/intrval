@@ -4,11 +4,7 @@ use core::{
     ops::{Add, Bound, Neg, Not, Sub},
 };
 
-use crate::{
-    helper::{minmax, Pair},
-    singleton::SingletonBounds,
-    Interval, OneOrPair,
-};
+pub use self::impls::EmptyIntervalError;
 
 // The lack of generic const expressions
 // forces to use `bool` instead of `enum Side {Left, Right}`
@@ -129,26 +125,6 @@ where
     }
 }
 
-/// Convert the two [`Bounded`] values into a pair of `BothBounds`,
-/// returning the original pair of values
-/// if at least one [conversion][IntoBounds::into_bounds] fails.
-fn pair_into_bounds<B1, B2, T>(a: B1, b: B2) -> Result<Pair<BothBounds<T>>, (B1, B2)>
-where
-    B1: Bounded<T> + From<B1::Error>,
-    B2: IntoBounds<T> + From<B2::Error>,
-{
-    let a_bounds = match a.into_bounds() {
-        Ok(bounds) => bounds,
-        Err(err) => return Err((err.into(), b)),
-    };
-    let b_bounds = match b.into_bounds() {
-        Ok(bounds) => bounds,
-        Err(err) => return Err((B1::from_bounds(a_bounds), err.into())),
-    };
-
-    Ok((a_bounds, b_bounds))
-}
-
 /// Used to convert an interval-like value into its endpoints.
 ///
 /// TODO: consider matching with `core::ops::IntoBounds` when
@@ -169,204 +145,6 @@ pub trait IntoBounds<T>: Sized {
 pub trait Bounded<T>: IntoBounds<T> {
     /// Create from the given pair of [`Endpoint`]-s.
     fn from_bounds(bounds: BothBounds<T>) -> Self;
-}
-
-/// Provides a bunch of set operations for [`Bounded`] types.
-pub trait SetOps<T>: Bounded<T>
-where
-    T: Ord,
-    Self: From<Self::Error>,
-{
-    /// Compute the intersection of `self` and `other`.
-    ///
-    /// # Errors
-    /// Return a pair of original values if at least one of [`Self::into_bounds`] fails.
-    fn intersect<R>(self, other: R) -> Result<Self, (Self, R)>
-    where
-        R: IntoBounds<T> + From<R::Error>,
-    {
-        let ((self_start, self_end), (other_start, other_end)) = pair_into_bounds(self, other)?;
-
-        let start = self_start.max(other_start);
-        let end = self_end.min(other_end);
-
-        Ok(Self::from_bounds((start, end)))
-    }
-
-    /// The smallest span containing both `self` and `other`
-    /// if the values [intersects][Self::intersect] (wrapped in [`OneOrPair::One`]).
-    ///
-    /// Otherwise (when the intervals are disjoint),
-    /// return a [pair][OneOrPair::Pair] of pairs of ordered ranges
-    ///
-    /// # Errors
-    /// Return a pair of original values if at least one of [`Self::into_bounds`] fails.
-    fn union<R>(self, other: R) -> Result<OneOrPair<Self>, (Self, R)>
-    where
-        R: IntoBounds<T> + From<R::Error>,
-    {
-        let ((self_start, self_end), (other_start, other_end)) = pair_into_bounds(self, other)?;
-
-        let [min_start, max_start] = minmax(self_start, other_start);
-        let [min_end, max_end] = minmax(self_end, other_end);
-
-        let are_disjoint = {
-            let (l, r) = (max_start.as_ref(), min_end.as_ref());
-            let empty_intersection = l > r;
-
-            // `[x, x)` or `(x, x]` is an empty gap for empty intersection => intervals are joint
-            // `(x, x)` is an empty gap for empty intersection `(x, x)` => intervals are disjoint
-            let empty_gap = !r > !l;
-            empty_intersection && !empty_gap
-        };
-
-        let one_or_pair = if are_disjoint {
-            OneOrPair::Pair((
-                Self::from_bounds((min_start, min_end)),
-                Self::from_bounds((max_start, max_end)),
-            ))
-        } else {
-            OneOrPair::One(Self::from_bounds((min_start, max_end)))
-        };
-        Ok(one_or_pair)
-    }
-
-    /// The smallest span containing both `self` and `other`.
-    ///
-    /// # Errors
-    /// Return a pair of original values if at least one of [`Self::into_bounds`] fails.
-    fn enclosure<R>(self, other: R) -> Result<Self, (Self, R)>
-    where
-        R: IntoBounds<T> + From<R::Error>,
-    {
-        let ((self_start, self_end), (other_start, other_end)) = pair_into_bounds(self, other)?;
-
-        let start = self_start.min(other_start);
-        let end = self_end.max(other_end);
-        Ok(Self::from_bounds((start, end)))
-    }
-}
-impl<T, X> SetOps<T> for X
-where
-    T: Ord,
-    X: Bounded<T> + From<Self::Error>,
-{
-}
-
-#[derive(Debug, Clone, Copy)]
-/// The operation error indicating that the interval is empty.
-pub struct EmptyIntervalError<T>(Interval<T>);
-
-impl<T: fmt::Display> fmt::Display for EmptyIntervalError<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "the interval is empty: ")?;
-        self.0.fmt(f)
-    }
-}
-
-impl<T> From<EmptyIntervalError<T>> for Interval<T> {
-    fn from(err: EmptyIntervalError<T>) -> Self {
-        err.0
-    }
-}
-
-// https://blog.rust-lang.org/2024/09/05/Rust-1.81.0/#core-error-error
-#[rustversion::since(1.81)]
-impl<T: fmt::Debug + fmt::Display> core::error::Error for EmptyIntervalError<T> {}
-
-impl<T> IntoBounds<T> for Interval<T>
-where
-    T: PartialOrd,
-    Self: SingletonBounds<T>,
-{
-    type Error = EmptyIntervalError<T>;
-
-    fn into_bounds(self) -> Result<BothBounds<T>, Self::Error> {
-        use Endpoint::{Excluded, Included, Infinite};
-
-        let bounds = match self {
-            Self::Empty => return Err(EmptyIntervalError(self)),
-            Self::LessThan(b) => (Infinite, Excluded(b)),
-            Self::LessThanOrEqual(b) => (Infinite, Included(b)),
-            #[cfg(feature = "singleton")]
-            Self::Singleton(x) => <Self as SingletonBounds<T>>::value_into_bounds(x),
-            Self::GreaterThanOrEqual(a) => (Included(a), Infinite),
-            Self::GreaterThan(a) => (Excluded(a), Infinite),
-            Self::Open((ref a, ref b)) if a >= b => {
-                return Err(EmptyIntervalError(self));
-            }
-            Self::Open((a, b)) => (Excluded(a), Excluded(b)),
-            Self::LeftOpen((ref a, ref b)) if a >= b => {
-                return Err(EmptyIntervalError(self));
-            }
-            Self::LeftOpen((a, b)) => (Excluded(a), Included(b)),
-            Self::RightOpen((ref a, ref b)) if a >= b => {
-                return Err(EmptyIntervalError(self));
-            }
-            Self::RightOpen((a, b)) => (Included(a), Excluded(b)),
-            Self::Closed((ref a, ref b)) if a > b => {
-                return Err(EmptyIntervalError(self));
-            }
-            Self::Closed((a, b)) => (Included(a), Included(b)),
-            Self::Full => (Infinite, Infinite),
-        };
-        Ok(bounds)
-    }
-}
-
-impl<T> Bounded<T> for Interval<T>
-where
-    T: PartialOrd,
-    Self: SingletonBounds<T>,
-{
-    fn from_bounds(bounds: BothBounds<T>) -> Self {
-        use Endpoint::{Excluded, Included, Infinite};
-
-        match bounds {
-            (Infinite, Infinite) => Self::Full,
-            (Infinite, Included(b)) => Self::LessThanOrEqual(b),
-            (Infinite, Excluded(b)) => Self::LessThan(b),
-            (Included(a), Infinite) => Self::GreaterThanOrEqual(a),
-            (Excluded(a), Infinite) => Self::GreaterThan(a),
-            (Included(a), Included(b)) => Self::Closed((a, b)),
-            (Included(a), Excluded(b)) => Self::RightOpen((a, b)),
-            (Excluded(a), Included(b)) => Self::LeftOpen((a, b)),
-            (Excluded(a), Excluded(b)) => Self::Open((a, b)),
-        }
-    }
-}
-
-impl<'a, T> IntoBounds<&'a T> for &'a Interval<T>
-where
-    T: PartialOrd,
-{
-    type Error = EmptyIntervalError<&'a T>;
-
-    fn into_bounds(self) -> Result<BothBounds<&'a T>, Self::Error> {
-        self.as_ref_bounds()
-    }
-}
-
-impl<T> Interval<T> {
-    /// Get referenced interval's bounds.
-    ///
-    /// # Errors
-    /// [`EmptyIntervalError`] wrapping a reference to itself when the interval is empty.
-    pub fn as_ref_bounds(&self) -> Result<BothBounds<&T>, <Interval<&T> as IntoBounds<&T>>::Error>
-    where
-        for<'a> Interval<&'a T>: IntoBounds<&'a T>,
-    {
-        self.as_ref().into_bounds()
-    }
-}
-
-impl<T> From<BothBounds<T>> for Interval<T>
-where
-    Self: Bounded<T>,
-{
-    fn from(bounds: BothBounds<T>) -> Self {
-        Self::from_bounds(bounds)
-    }
 }
 
 pub const fn inf_ordering(side: bool) -> Ordering {
@@ -560,6 +338,132 @@ where
     }
 }
 
+mod impls {
+    use core::fmt;
+
+    use crate::{bounds::Endpoint, singleton::SingletonBounds, Interval};
+
+    use super::{BothBounds, Bounded, IntoBounds};
+
+    #[derive(Debug, Clone, Copy)]
+    /// The operation error indicating that the interval is empty.
+    pub struct EmptyIntervalError<T>(Interval<T>);
+
+    impl<T: fmt::Display> fmt::Display for EmptyIntervalError<T> {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "the interval is empty: ")?;
+            self.0.fmt(f)
+        }
+    }
+
+    impl<T> From<EmptyIntervalError<T>> for Interval<T> {
+        fn from(err: EmptyIntervalError<T>) -> Self {
+            err.0
+        }
+    }
+
+    // https://blog.rust-lang.org/2024/09/05/Rust-1.81.0/#core-error-error
+    #[rustversion::since(1.81)]
+    impl<T: fmt::Debug + fmt::Display> core::error::Error for EmptyIntervalError<T> {}
+
+    impl<T> IntoBounds<T> for Interval<T>
+    where
+        T: PartialOrd,
+        Self: SingletonBounds<T>,
+    {
+        type Error = EmptyIntervalError<T>;
+
+        fn into_bounds(self) -> Result<BothBounds<T>, Self::Error> {
+            use Endpoint::{Excluded, Included, Infinite};
+
+            let bounds = match self {
+                Self::Empty => return Err(EmptyIntervalError(self)),
+                Self::LessThan(b) => (Infinite, Excluded(b)),
+                Self::LessThanOrEqual(b) => (Infinite, Included(b)),
+                #[cfg(feature = "singleton")]
+                Self::Singleton(x) => <Self as SingletonBounds<T>>::value_into_bounds(x),
+                Self::GreaterThanOrEqual(a) => (Included(a), Infinite),
+                Self::GreaterThan(a) => (Excluded(a), Infinite),
+                Self::Open((ref a, ref b)) if a >= b => {
+                    return Err(EmptyIntervalError(self));
+                }
+                Self::Open((a, b)) => (Excluded(a), Excluded(b)),
+                Self::LeftOpen((ref a, ref b)) if a >= b => {
+                    return Err(EmptyIntervalError(self));
+                }
+                Self::LeftOpen((a, b)) => (Excluded(a), Included(b)),
+                Self::RightOpen((ref a, ref b)) if a >= b => {
+                    return Err(EmptyIntervalError(self));
+                }
+                Self::RightOpen((a, b)) => (Included(a), Excluded(b)),
+                Self::Closed((ref a, ref b)) if a > b => {
+                    return Err(EmptyIntervalError(self));
+                }
+                Self::Closed((a, b)) => (Included(a), Included(b)),
+                Self::Full => (Infinite, Infinite),
+            };
+            Ok(bounds)
+        }
+    }
+
+    impl<T> Bounded<T> for Interval<T>
+    where
+        T: PartialOrd,
+        Self: SingletonBounds<T>,
+    {
+        fn from_bounds(bounds: BothBounds<T>) -> Self {
+            use Endpoint::{Excluded, Included, Infinite};
+
+            match bounds {
+                (Infinite, Infinite) => Self::Full,
+                (Infinite, Included(b)) => Self::LessThanOrEqual(b),
+                (Infinite, Excluded(b)) => Self::LessThan(b),
+                (Included(a), Infinite) => Self::GreaterThanOrEqual(a),
+                (Excluded(a), Infinite) => Self::GreaterThan(a),
+                (Included(a), Included(b)) => Self::Closed((a, b)),
+                (Included(a), Excluded(b)) => Self::RightOpen((a, b)),
+                (Excluded(a), Included(b)) => Self::LeftOpen((a, b)),
+                (Excluded(a), Excluded(b)) => Self::Open((a, b)),
+            }
+        }
+    }
+
+    impl<'a, T> IntoBounds<&'a T> for &'a Interval<T>
+    where
+        T: PartialOrd,
+    {
+        type Error = EmptyIntervalError<&'a T>;
+
+        fn into_bounds(self) -> Result<BothBounds<&'a T>, Self::Error> {
+            self.as_ref_bounds()
+        }
+    }
+
+    impl<T> Interval<T> {
+        /// Get referenced interval's bounds.
+        ///
+        /// # Errors
+        /// [`EmptyIntervalError`] wrapping a reference to itself when the interval is empty.
+        pub fn as_ref_bounds(
+            &self,
+        ) -> Result<BothBounds<&T>, <Interval<&T> as IntoBounds<&T>>::Error>
+        where
+            for<'a> Interval<&'a T>: IntoBounds<&'a T>,
+        {
+            self.as_ref().into_bounds()
+        }
+    }
+
+    impl<T> From<BothBounds<T>> for Interval<T>
+    where
+        Self: Bounded<T>,
+    {
+        fn from(bounds: BothBounds<T>) -> Self {
+            Self::from_bounds(bounds)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::interval;
@@ -605,110 +509,6 @@ mod tests {
         assert_eq!(
             interval!(..: i32).into_bounds().unwrap(),
             (Infinite, Infinite)
-        );
-    }
-
-    #[test]
-    fn intersect() {
-        let a = interval!([3, 7]);
-        let b = interval!((5, 10));
-        assert_eq!(a.intersect(b).unwrap(), interval!((5, =7)));
-
-        let a = interval!(<5);
-        let b = interval!(>3);
-        assert_eq!(a & b, interval!((3, 5)));
-
-        let a = interval!(<=5);
-        let b = interval!(>=-3);
-        assert_eq!(a & b, interval!([-3, 5]));
-
-        let a = interval!(..: i32);
-        let b = interval!(_: i32);
-        assert!(matches!(
-            a.intersect(b).unwrap_err(),
-            (interval!(..), interval!(_))
-        ));
-    }
-
-    #[test]
-    fn intersect_empty() {
-        let a = interval!([1, 2]);
-        let b = interval!([3, 4]);
-        assert_eq!(a.intersect(b).unwrap(), interval!([3, 2]));
-        assert!((a & b).is_empty());
-
-        let a = interval!(>6);
-        let b = interval!(<3);
-        assert_eq!(a.intersect(b).unwrap(), interval!((6, 3)));
-        assert!((a & b).is_empty());
-
-        let a = interval!(>=6);
-        let b = interval!(<6);
-        assert_eq!(a.intersect(b).unwrap(), interval!((=6, 6)));
-        assert!((a & b).is_empty());
-
-        let a = interval!((2, =4));
-        let b = interval!((=3, 1));
-        assert_eq!(a.intersect(b).unwrap_err(), (a, b));
-    }
-
-    #[test]
-    fn intersect_single() {
-        let a = interval!(>=6);
-        let b = interval!(<=6);
-        assert_eq!(a.intersect(b).unwrap(), interval!([6, 6]));
-        assert_eq!((a & b), interval!(=6));
-
-        let a = interval!((2, =3));
-        let b = interval!((=3, 8));
-        assert_eq!(a.intersect(b).unwrap(), interval!([3, 3]));
-        assert_eq!((a & b), interval!(==3));
-    }
-
-    #[test]
-    fn enclosure() {
-        let a = interval!([3, 7]);
-        let b = interval!((5, 10));
-        assert_eq!(a.enclosure(b).unwrap(), interval!((=3, 10)));
-
-        let a = interval!(<5);
-        let b = interval!(>3);
-        assert_eq!(a.enclosure(b).unwrap(), Interval::Full);
-
-        let a = interval!(<=-100);
-        let b = interval!(>=100);
-        assert_eq!(a.enclosure(b).unwrap(), Interval::Full);
-
-        let a = interval!([1, 2]);
-        let b = interval!([3, 4]);
-        assert_eq!(a.enclosure(b).unwrap(), interval!([1, 4]));
-    }
-
-    #[test]
-    fn union_touching() {
-        let a = interval!([1, 2]);
-        let b = interval!([2, 4]);
-        assert_eq!(
-            a.union(b).unwrap().into_single().unwrap(),
-            interval!([1, 4])
-        );
-
-        let a = interval!((1, 2));
-        let b = interval!([2, 4]);
-        assert_eq!((a | b).into_single().unwrap(), interval!((1, =4)));
-
-        let a = interval!([1, 2]);
-        let b = interval!((2, 4));
-        assert_eq!(
-            a.union(b).unwrap().into_single().unwrap(),
-            interval!((=1, 4))
-        );
-
-        let a = interval!((1, 2));
-        let b = interval!((2, 4));
-        assert_eq!(
-            (a | b).into_pair().unwrap(),
-            (interval!((1, 2)), interval!((2, 4)))
         );
     }
 

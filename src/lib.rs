@@ -7,6 +7,7 @@ pub(crate) mod bounds;
 pub(crate) mod helper;
 mod interval;
 mod ops;
+mod set;
 pub(crate) mod singleton;
 mod str;
 
@@ -14,8 +15,9 @@ mod str;
 pub use self::arbitrary::BoundedInterval;
 
 pub use self::{
-    bounds::{Bounded, EmptyIntervalError, Endpoint, IntoBounds, SetOps},
+    bounds::{Bounded, EmptyIntervalError, Endpoint, IntoBounds},
     helper::{OneOrPair, Size, Zero},
     interval::Interval,
+    set::SetOps,
     singleton::{Singleton, SingletonBounds},
 };
