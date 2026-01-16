@@ -8,9 +8,13 @@ edition = "2021"
 keywords = ["interval", "bounds", "math", "no-std"]
 categories = ["science", "data-structures"]
 authors = []
-rust-version = "1.56"
+rust-version = "1.68"
 readme = "README.md"
 
+
+[dependencies.rustversion]
+version = "1.0"
+default-features = false
 
 [dependencies.serde]
 version = "1.0.228"
@@ -19,7 +23,7 @@ features = ["derive"]
 optional = true
 
 [dependencies.proptest]
-version = "1.9"
+version = "< 1.7"  # to be supported by Rust 1.66+
 default-features = false
 features = ["std"]
 optional = true

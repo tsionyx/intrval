@@ -18,7 +18,8 @@ pub trait Singleton<T> {
     fn singleton(x: T) -> Self;
 }
 
-#[allow(unnameable_types)]
+// https://github.com/rust-lang/rust/releases/tag/1.79.0
+#[rustversion::attr(since(1.79), allow(unnameable_types))]
 /// Special trait to convert a value into [`Endpoint`][crate::Endpoint]-s representing a singleton interval.
 ///
 /// This trait is only has a single method when the `singleton` feature is enabled.

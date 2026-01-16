@@ -2,7 +2,7 @@ use core::cmp::Ordering;
 
 use crate::{
     bounds::{Bounded, Endpoint},
-    helper::{Pair, Size, Zero},
+    helper::{Pair, Size},
     singleton::SingletonBounds,
 };
 
@@ -304,7 +304,7 @@ impl<T> Interval<T> {
     /// ```
     pub fn len(&self) -> Size<<T as core::ops::Sub>::Output>
     where
-        T: Clone + PartialOrd + core::ops::Sub<Output: Zero>,
+        T: Clone + PartialOrd + core::ops::Sub,
     {
         let Ok((a, b)) = self.as_ref().into_bounds() else {
             return Size::Empty;

@@ -1,5 +1,18 @@
 This is a list of all notable changes.
 
+# Unreleased
+
+_2026-01-16_
+
+## Fixed
+
+- bump MSRV to _**1.68**_:
+  - [namespaced features](https://blog.rust-lang.org/2022/04/07/Rust-1.60.0/#new-syntax-for-cargo-features)
+    in _Cargo.toml_ (_**1.60**_);
+  - [_sparse_ protocol](https://blog.rust-lang.org/2023/03/09/Rust-1.68.0/#cargo-s-sparse-protocol)
+    for the index of crate dependencies (_**1.68**_);
+
+
 # v0.1.0
 
 _2026-01-07_ (The first release)

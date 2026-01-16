@@ -852,7 +852,8 @@ mod mul_tests {
         bounds: Result<PrioritizedBounds<T>, crate::bounds::EmptyIntervalError<T>>,
         result_interval: Interval<T>,
     ) where
-        Interval<T>: Bounded<T, Error: core::fmt::Debug>,
+        Interval<T>: Bounded<T>,
+        <Interval<T> as Bounded<T>>::Error: core::fmt::Debug,
     {
         let (a, b) = bounds.unwrap();
         let pair = (a.into_data(), b.into_data());

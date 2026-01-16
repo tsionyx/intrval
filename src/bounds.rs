@@ -262,6 +262,8 @@ impl<T> From<EmptyIntervalError<T>> for Interval<T> {
     }
 }
 
+// https://blog.rust-lang.org/2024/09/05/Rust-1.81.0/#core-error-error
+#[rustversion::since(1.81)]
 impl<T: fmt::Debug + fmt::Display> core::error::Error for EmptyIntervalError<T> {}
 
 impl<T> Bounded<T> for Interval<T>

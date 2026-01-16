@@ -1,3 +1,7 @@
+extern crate alloc;
+
+#[allow(unused_imports)] // will be used internally by `prop_assert` macros
+use alloc::format;
 use core::ops;
 
 use proptest::prelude::*;
@@ -104,7 +108,8 @@ impl<T> From<Interval<T>> for BoundedInterval<T> {
 
 impl<T> Arbitrary for BoundedInterval<T>
 where
-    T: PartialOrd + Clone + Arbitrary<Strategy: 'static> + 'static,
+    T: PartialOrd + Clone + Arbitrary + 'static,
+    <T as Arbitrary>::Strategy: 'static,
     ops::Range<T>: Strategy<Value = T>,
     ops::RangeFrom<T>: Strategy<Value = T>,
     ops::RangeTo<T>: Strategy<Value = T>,
