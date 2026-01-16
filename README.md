@@ -143,7 +143,7 @@ assert_eq!(i5to20_excl * iuni, iuni);
 ## set operations
 
 ```rust
-use intrval::{interval, Bounded as _};
+use intrval::{interval, SetOps as _};
 
 let igt2 = interval!(> 2);
 let igt10 = interval!(> 10);

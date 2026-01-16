@@ -7,7 +7,7 @@ use core::{
 };
 
 use crate::{
-    bounds::{inf_ordering, Bounded, Endpoint, LBound, RBound, LEFT, RIGHT},
+    bounds::{inf_ordering, Bounded, Endpoint, IntoBounds, LBound, RBound, SetOps, LEFT, RIGHT},
     helper::map_pair,
     Interval, OneOrPair, Zero,
 };
@@ -85,7 +85,7 @@ impl<T: PartialOrd> Interval<T> {
     pub fn is_disjoint<'other, R>(&self, other: R) -> bool
     where
         T: Ord + 'other,
-        R: Bounded<&'other T>,
+        R: IntoBounds<&'other T>,
     {
         // if at least one of the intervals is empty, they cannot be disjoint
 
@@ -111,7 +111,7 @@ impl<T: PartialOrd> Interval<T> {
     pub fn is_sub<'other, R>(&self, other: R) -> bool
     where
         T: 'other,
-        R: Bounded<&'other T>,
+        R: IntoBounds<&'other T>,
     {
         let Ok((self_start, self_end)) = self.as_ref_bounds() else {
             // the empty interval is contained in any interval
@@ -132,7 +132,7 @@ impl<T: PartialOrd> Interval<T> {
     pub fn is_super<'other, R>(&self, other: R) -> bool
     where
         T: 'other,
-        R: Bounded<&'other T>,
+        R: IntoBounds<&'other T>,
     {
         let Ok((other_start, other_end)) = other.into_bounds() else {
             // the empty interval is contained in any interval
@@ -189,8 +189,8 @@ impl<T, U, Z> Add<Interval<U>> for Interval<T>
 where
     T: Zero + Add<U, Output = Z>,
     U: Zero,
-    Self: Bounded<T>,
-    Interval<U>: Bounded<U>,
+    Self: IntoBounds<T>,
+    Interval<U>: IntoBounds<U>,
     Interval<Z>: Bounded<Z>,
 {
     type Output = Interval<Z>;
@@ -223,8 +223,8 @@ impl<T, U, Z> Sub<Interval<U>> for Interval<T>
 where
     T: Zero + Sub<U, Output = Z>,
     U: Zero,
-    Self: Bounded<T>,
-    Interval<U>: Bounded<U>,
+    Self: IntoBounds<T>,
+    Interval<U>: IntoBounds<U>,
     Interval<Z>: Bounded<Z>,
 {
     type Output = Interval<Z>;
@@ -390,7 +390,7 @@ impl<T> Interval<T> {
         Self: Mul<N, Output = Interval<Z>>,
         T: Zero + PartialOrd,
         Z: Zero,
-        Interval<Z>: Bounded<Z, Error = E>,
+        Interval<Z>: IntoBounds<Z, Error = E>,
     {
         let zero_point = T::zero();
         let zero_result = || Z::zero();
@@ -534,9 +534,9 @@ where
 
 impl<T, U> BitAnd<U> for Interval<T>
 where
-    Self: Bounded<T>,
+    Self: SetOps<T>,
     T: Ord,
-    U: Bounded<T>,
+    U: IntoBounds<T> + From<U::Error>,
 {
     type Output = Self;
 
@@ -547,9 +547,9 @@ where
 
 impl<T, U> BitOr<U> for Interval<T>
 where
-    Self: Bounded<T>,
+    Self: SetOps<T>,
     T: Ord,
-    U: Bounded<T>,
+    U: IntoBounds<T> + From<U::Error>,
 {
     type Output = OneOrPair<Self>;
 
@@ -909,8 +909,8 @@ mod mul_tests {
         bounds: Result<PrioritizedBounds<T>, crate::bounds::EmptyIntervalError<T>>,
         result_interval: Interval<T>,
     ) where
-        Interval<T>: Bounded<T>,
-        <Interval<T> as Bounded<T>>::Error: core::fmt::Debug,
+        Interval<T>: IntoBounds<T>,
+        <Interval<T> as IntoBounds<T>>::Error: core::fmt::Debug,
     {
         let (a, b) = bounds.unwrap();
         let pair = (a.into_data(), b.into_data());

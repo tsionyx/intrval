@@ -2,7 +2,7 @@
 
 use core::cmp::Ordering;
 
-use intrval::{interval, Bounded as _, Interval, Size};
+use intrval::{interval, Interval, SetOps as _, Size};
 
 #[allow(clippy::cognitive_complexity)]
 fn main() {

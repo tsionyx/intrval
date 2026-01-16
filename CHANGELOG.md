@@ -19,6 +19,18 @@ _2026-01-16_
 
 ## Changed
 
+- split the `Bounded` trait into hierarchy of traits:
+  - `IntoBounds` to define only conversion to a pair of `Endpoint`-s;
+    - this reduction allows to implement it for `&Interval<T>`,
+      improving ergonomic (skipping some `.as_ref()` calls);
+  - `Bounded<T>`:
+    - adds the `.from_bounds()`
+    - removes the requirement `type Error: Into<Self>`;
+  - `SetOps<T>` to define operations:
+    - `.intersect(self, other: impl IntoBounds)`;
+    - `.union(self, other: impl IntoBounds)`;
+    - `.enclosure(self, other: impl IntoBounds)`;
+
 - `Interval::point_cmp` to answer whether a point `T`
   lies to the right/left of the `Interval<T>`.
   The signature of the method matches the `PartialOrd::<T>::partial_cmp`,

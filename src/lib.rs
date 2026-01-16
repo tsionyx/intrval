@@ -14,7 +14,7 @@ mod str;
 pub use self::arbitrary::BoundedInterval;
 
 pub use self::{
-    bounds::{Bounded, EmptyIntervalError, Endpoint},
+    bounds::{Bounded, EmptyIntervalError, Endpoint, IntoBounds, SetOps},
     helper::{OneOrPair, Size, Zero},
     interval::Interval,
     singleton::{Singleton, SingletonBounds},

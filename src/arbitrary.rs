@@ -130,7 +130,7 @@ where
 #[cfg(test)]
 mod prop_test {
     use crate::{
-        bounds::{Bounded as _, Endpoint::Infinite},
+        bounds::{Endpoint::Infinite, IntoBounds as _, SetOps as _},
         interval,
     };
 
@@ -494,6 +494,8 @@ mod prop_test {
     mod bounds {
         use super::*;
 
+        use crate::bounds::Bounded as _;
+
         proptest! {
             #![proptest_config(ProptestConfig::with_cases(8000))]
 
@@ -579,7 +581,7 @@ mod prop_test {
             fn union_is_enclosure_when_intersects(range1: Interval<Int>, range2: Interval<Int>) {
                 use crate::OneOrPair;
 
-                let is_disjoint = range1.is_disjoint(range2.as_ref());
+                let is_disjoint = range1.is_disjoint(&range2);
                 let inter = range1 & range2;
                 let enclosed = range1.enclosure(range2).unwrap_or(Interval::Full);
 
@@ -647,17 +649,17 @@ mod prop_test {
                 if !range.is_empty() {
                     prop_assert_eq!(range.enclosure(range).unwrap(), range);
                 }
-                prop_assert!(range.is_super(range.as_ref()));
-                prop_assert!(range.is_sub(range.as_ref()));
-                prop_assert!(!range.is_disjoint(range.as_ref()));
+                prop_assert!(range.is_super(&range));
+                prop_assert!(range.is_sub(&range));
+                prop_assert!(!range.is_disjoint(&range));
             }
 
             #[test]
             fn sub_super_union_intersects(range1: Interval<Int>, range2: Interval<Int>) {
-                let first_super = range1.is_super(range2.as_ref());
-                let first_sub = range1.is_sub(range2.as_ref());
-                let second_super = range2.is_super(range1.as_ref());
-                let second_sub = range2.is_sub(range1.as_ref());
+                let first_super = range1.is_super(&range2);
+                let first_sub = range1.is_sub(&range2);
+                let second_super = range2.is_super(&range1);
+                let second_sub = range2.is_sub(&range1);
                 let inter = range1 & range2;
                 let uni = range1 | range2;
 
@@ -692,10 +694,10 @@ mod prop_test {
                         prop_assert!(!first_sub);
                         prop_assert!(!second_sub);
 
-                        prop_assert!(range1.is_super(inter.as_ref()));
-                        prop_assert!(!range1.is_sub(inter.as_ref()));
-                        prop_assert!(range2.is_super(inter.as_ref()));
-                        prop_assert!(!range2.is_sub(inter.as_ref()));
+                        prop_assert!(range1.is_super(&inter));
+                        prop_assert!(!range1.is_sub(&inter));
+                        prop_assert!(range2.is_super(&inter));
+                        prop_assert!(!range2.is_sub(&inter));
                     }
                 }
             }

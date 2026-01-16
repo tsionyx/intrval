@@ -131,11 +131,11 @@ where
 
 /// Convert the two [`Bounded`] values into a pair of `BothBounds`,
 /// returning the original pair of values
-/// if at least one [conversion][Bounded::into_bounds] fails.
+/// if at least one [conversion][IntoBounds::into_bounds] fails.
 fn pair_into_bounds<B1, B2, T>(a: B1, b: B2) -> Result<Pair<BothBounds<T>>, (B1, B2)>
 where
-    B1: Bounded<T>,
-    B2: Bounded<T>,
+    B1: Bounded<T> + From<B1::Error>,
+    B2: IntoBounds<T> + From<B2::Error>,
 {
     let a_bounds = match a.into_bounds() {
         Ok(bounds) => bounds,
@@ -149,31 +149,41 @@ where
     Ok((a_bounds, b_bounds))
 }
 
-/// Used to convert a value into start and end endpoints, consuming the value.
+/// Used to convert an interval-like value into its endpoints.
 ///
 /// TODO: consider matching with `core::ops::IntoBounds` when
 /// the `feature = "range_into_bounds"` gets stabilized.
-pub trait Bounded<T>: Sized {
+pub trait IntoBounds<T>: Sized {
     /// The error signalling conversion to [`Endpoint`]-s fails.
-    type Error: Into<Self>;
+    type Error;
 
-    /// Create from the given pair of [`Bound`]-s.
-    fn from_bounds(bounds: BothBounds<T>) -> Self;
-
-    /// Convert this range into the start and end bounds.
+    /// Convert this value into the left and right bounds, consuming the value.
     ///
     /// # Errors
     /// Return [`Self::Error`] if the conversion fails.
     fn into_bounds(self) -> Result<BothBounds<T>, Self::Error>;
+}
 
+/// Extend the [`IntoBounds`] trait to allow creating
+/// a value from a pair of [`Endpoint`]-s.
+pub trait Bounded<T>: IntoBounds<T> {
+    /// Create from the given pair of [`Endpoint`]-s.
+    fn from_bounds(bounds: BothBounds<T>) -> Self;
+}
+
+/// Provides a bunch of set operations for [`Bounded`] types.
+pub trait SetOps<T>: Bounded<T>
+where
+    T: Ord,
+    Self: From<Self::Error>,
+{
     /// Compute the intersection of `self` and `other`.
     ///
     /// # Errors
     /// Return a pair of original values if at least one of [`Self::into_bounds`] fails.
     fn intersect<R>(self, other: R) -> Result<Self, (Self, R)>
     where
-        T: Ord,
-        R: Bounded<T>,
+        R: IntoBounds<T> + From<R::Error>,
     {
         let ((self_start, self_end), (other_start, other_end)) = pair_into_bounds(self, other)?;
 
@@ -193,8 +203,7 @@ pub trait Bounded<T>: Sized {
     /// Return a pair of original values if at least one of [`Self::into_bounds`] fails.
     fn union<R>(self, other: R) -> Result<OneOrPair<Self>, (Self, R)>
     where
-        T: Ord,
-        R: Bounded<T>,
+        R: IntoBounds<T> + From<R::Error>,
     {
         let ((self_start, self_end), (other_start, other_end)) = pair_into_bounds(self, other)?;
 
@@ -228,8 +237,7 @@ pub trait Bounded<T>: Sized {
     /// Return a pair of original values if at least one of [`Self::into_bounds`] fails.
     fn enclosure<R>(self, other: R) -> Result<Self, (Self, R)>
     where
-        T: Ord,
-        R: Bounded<T>,
+        R: IntoBounds<T> + From<R::Error>,
     {
         let ((self_start, self_end), (other_start, other_end)) = pair_into_bounds(self, other)?;
 
@@ -237,6 +245,12 @@ pub trait Bounded<T>: Sized {
         let end = self_end.max(other_end);
         Ok(Self::from_bounds((start, end)))
     }
+}
+impl<T, X> SetOps<T> for X
+where
+    T: Ord,
+    X: Bounded<T> + From<Self::Error>,
+{
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -260,28 +274,12 @@ impl<T> From<EmptyIntervalError<T>> for Interval<T> {
 #[rustversion::since(1.81)]
 impl<T: fmt::Debug + fmt::Display> core::error::Error for EmptyIntervalError<T> {}
 
-impl<T> Bounded<T> for Interval<T>
+impl<T> IntoBounds<T> for Interval<T>
 where
     T: PartialOrd,
     Self: SingletonBounds<T>,
 {
     type Error = EmptyIntervalError<T>;
-
-    fn from_bounds(bounds: BothBounds<T>) -> Self {
-        use Endpoint::{Excluded, Included, Infinite};
-
-        match bounds {
-            (Infinite, Infinite) => Self::Full,
-            (Infinite, Included(b)) => Self::LessThanOrEqual(b),
-            (Infinite, Excluded(b)) => Self::LessThan(b),
-            (Included(a), Infinite) => Self::GreaterThanOrEqual(a),
-            (Excluded(a), Infinite) => Self::GreaterThan(a),
-            (Included(a), Included(b)) => Self::Closed((a, b)),
-            (Included(a), Excluded(b)) => Self::RightOpen((a, b)),
-            (Excluded(a), Included(b)) => Self::LeftOpen((a, b)),
-            (Excluded(a), Excluded(b)) => Self::Open((a, b)),
-        }
-    }
 
     fn into_bounds(self) -> Result<BothBounds<T>, Self::Error> {
         use Endpoint::{Excluded, Included, Infinite};
@@ -316,14 +314,47 @@ where
     }
 }
 
+impl<T> Bounded<T> for Interval<T>
+where
+    T: PartialOrd,
+    Self: SingletonBounds<T>,
+{
+    fn from_bounds(bounds: BothBounds<T>) -> Self {
+        use Endpoint::{Excluded, Included, Infinite};
+
+        match bounds {
+            (Infinite, Infinite) => Self::Full,
+            (Infinite, Included(b)) => Self::LessThanOrEqual(b),
+            (Infinite, Excluded(b)) => Self::LessThan(b),
+            (Included(a), Infinite) => Self::GreaterThanOrEqual(a),
+            (Excluded(a), Infinite) => Self::GreaterThan(a),
+            (Included(a), Included(b)) => Self::Closed((a, b)),
+            (Included(a), Excluded(b)) => Self::RightOpen((a, b)),
+            (Excluded(a), Included(b)) => Self::LeftOpen((a, b)),
+            (Excluded(a), Excluded(b)) => Self::Open((a, b)),
+        }
+    }
+}
+
+impl<'a, T> IntoBounds<&'a T> for &'a Interval<T>
+where
+    T: PartialOrd,
+{
+    type Error = EmptyIntervalError<&'a T>;
+
+    fn into_bounds(self) -> Result<BothBounds<&'a T>, Self::Error> {
+        self.as_ref_bounds()
+    }
+}
+
 impl<T> Interval<T> {
     /// Get referenced interval's bounds.
     ///
     /// # Errors
     /// [`EmptyIntervalError`] wrapping a reference to itself when the interval is empty.
-    pub fn as_ref_bounds(&self) -> Result<BothBounds<&T>, <Interval<&T> as Bounded<&T>>::Error>
+    pub fn as_ref_bounds(&self) -> Result<BothBounds<&T>, <Interval<&T> as IntoBounds<&T>>::Error>
     where
-        for<'a> Interval<&'a T>: Bounded<&'a T>,
+        for<'a> Interval<&'a T>: IntoBounds<&'a T>,
     {
         self.as_ref().into_bounds()
     }
