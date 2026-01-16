@@ -408,8 +408,13 @@ impl<T> Interval<T> {
 /// assert_eq!(interval!(..: f32), Full);
 /// ```
 macro_rules! interval {
-    (_ $(:$t:ty)?) => {
-        $crate::Interval $(::<$t>)? ::Empty
+    ($ctor:tt: $t:ty) => {
+        // TODO: apply the `as $crate::Interval::<$t>`
+        //  when the https://github.com/rust-lang/rust/issues/151202 gets fixed
+        $crate::Interval::<$t>::from($crate::interval!($ctor))
+    };
+    (_) => {
+        $crate::Interval::Empty
     };
     (< $x:expr) => {
         $crate::Interval::LessThan($x)
@@ -423,10 +428,9 @@ macro_rules! interval {
     (>= $x:expr) => {
         $crate::Interval::GreaterThanOrEqual($x)
     };
-    (= $x:expr) => {{
-        use $crate::Singleton as _;
-        $crate::Interval::singleton($x)
-    }};
+    (= $x:expr) => {
+        $crate::interval!(== $x)
+    };
     (== $x:expr) => {{
         use $crate::Singleton as _;
         $crate::Interval::singleton($x)
@@ -437,10 +441,10 @@ macro_rules! interval {
 
     // unbalanced [ and ) are not supported in macros to avoid confusion
     ( ($a:expr , =$b:expr) ) => {
-       $crate::Interval::LeftOpen(($a, $b))
+        $crate::Interval::LeftOpen(($a, $b))
     };
     ( ( =$a:expr , $b:expr ) ) => {
-       $crate::Interval::RightOpen(($a, $b))
+        $crate::Interval::RightOpen(($a, $b))
     };
     ( ( =$a:expr , =$b:expr ) ) => {
         $crate::Interval::Closed(($a, $b))
@@ -449,7 +453,7 @@ macro_rules! interval {
     ( [ $a:expr , $b:expr ] ) => {
         $crate::Interval::Closed(($a, $b))
     };
-    (.. $(:$t:ty)? ) => {
-        $crate::Interval $(::<$t>)? ::Full
+    (..) => {
+        $crate::Interval::Full
     };
 }

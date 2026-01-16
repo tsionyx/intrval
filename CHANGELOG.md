@@ -35,6 +35,8 @@ _2026-01-16_
   - add the `is_sub` (reverse to `is_super`) method;
   - add the `is_disjoint` to check whether the two `Interval`-s could be merged into a single one;
 
+- minor changes for the `interval!` macro to allow to specify type of the produced `Interval`.
+
 
 # v0.1.0
 
