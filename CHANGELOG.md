@@ -27,9 +27,12 @@ _2026-01-16_
     - adds the `.from_bounds()`
     - removes the requirement `type Error: Into<Self>`;
   - `SetOps<T>` to define operations:
-    - `.intersect(self, other: impl IntoBounds)`;
-    - `.union(self, other: impl IntoBounds)`;
-    - `.enclosure(self, other: impl IntoBounds)`;
+    - `.intersect(self, other: impl IntoBounds)`
+      (return type changed: `Result<Self, (Self, R)>` -> `Result<Self, R>`);
+    - `.union(self, other: impl IntoBounds)`
+      (return type changed: `Result<OneOrPair<Self>, (Self, R)>` -> `OneOrPair<Self>`)
+    - `.enclosure(self, other: impl IntoBounds)`
+      (return type changed: `Result<Self, (Self, R)>` -> `Self`);
     - `.is_disjoint(&self, other: impl IntoBounds<&T>)`
       to check whether the two `Interval`-s are separated
       and could not be merged into a single one;

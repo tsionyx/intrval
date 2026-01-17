@@ -131,14 +131,10 @@ fn main() {
     );
 
     assert_eq!(
-        igt10
-            .union(interval!([-2, 10]))
-            .unwrap()
-            .into_single()
-            .unwrap(),
+        igt10.union(interval!([-2, 10])).into_single().unwrap(),
         interval!(>= -2)
     );
-    // `.union` is aliased with `|` (falling back to the first non-empty if possible)
+    // `.union` is aliased with `|`
     assert_eq!(
         (interval!([-2, 10]) | igt2).into_single().unwrap(),
         interval!(>= -2)
@@ -153,8 +149,5 @@ fn main() {
     assert_eq!((interval!(0) | igt2).into_single().unwrap(), igt2);
     assert_eq!((igt2 | interval!(0)).into_single().unwrap(), igt2);
 
-    assert_eq!(
-        interval!([-2, 10]).enclosure(igt10 * 2).unwrap(),
-        interval!(>= -2)
-    );
+    assert_eq!(interval!([-2, 10]).enclosure(igt10 * 2), interval!(>= -2));
 }

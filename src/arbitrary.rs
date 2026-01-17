@@ -556,26 +556,30 @@ mod prop_test {
 
             #[test]
             fn intersect_on_err_returns_original(range1: Interval<Int>, range2: Interval<Int>) {
-                if let Err((a, b)) = range1.intersect(range2) {
-                    prop_assert_eq!(a, range1);
-                    prop_assert_eq!(b, range2);
+                if let Err(fail) = range1.intersect(range2) {
+                    prop_assert_eq!(fail, range2);
                 }
             }
 
             #[test]
-            fn union_on_err_returns_original(range1: Interval<Int>, range2: Interval<Int>) {
-                if let Err((a, b)) = range1.union(range2) {
-                    prop_assert_eq!(a, range1);
-                    prop_assert_eq!(b, range2);
-                }
+            fn intersect_is_reflexive(range1: Interval<Int>, range2: Interval<Int>) {
+                let a = range1.intersect(range2).unwrap_or_else(|err| err);
+                let b = range2.intersect(range1).unwrap_or_else(|err| err);
+                prop_assert_eq!(a, b);
             }
 
             #[test]
-            fn enclosure_on_err_returns_original(range1: Interval<Int>, range2: Interval<Int>) {
-                if let Err((a, b)) = range1.enclosure(range2) {
-                    prop_assert_eq!(a, range1);
-                    prop_assert_eq!(b, range2);
-                }
+            fn union_is_reflexive(range1: Interval<Int>, range2: Interval<Int>) {
+                let a = range1.union(range2);
+                let b = range2.union(range1);
+                prop_assert_eq!(a, b);
+            }
+
+            #[test]
+            fn enclosure_is_reflexive(range1: Interval<Int>, range2: Interval<Int>) {
+                let a = range1.enclosure(range2);
+                let b = range2.enclosure(range1);
+                prop_assert_eq!(a, b);
             }
 
             #[test]
@@ -583,13 +587,16 @@ mod prop_test {
                 use crate::OneOrPair;
 
                 let is_disjoint = range1.is_disjoint(&range2);
-                let inter = range1 & range2;
-                let enclosed = range1.enclosure(range2).unwrap_or(Interval::Full);
+                // check the `is_disjoint` is reflexive
+                prop_assert_eq!(is_disjoint, range2.is_disjoint(&range1));
 
-                match range1.union(range2).unwrap_or(OneOrPair::One(Interval::Full)) {
+                let inter = range1 & range2;
+                let enclosed = range1.enclosure(range2);
+
+                match range1.union(range2) {
                     OneOrPair::One(i) => {
                         prop_assert!(!is_disjoint);
-                        prop_assert!(!i.is_empty());
+                        prop_assert!(!i.is_empty() || (range1.is_empty() && range2.is_empty()));
                         prop_assert_eq!(i, enclosed);
                     }
                     OneOrPair::Pair((a, b)) => {
@@ -609,10 +616,9 @@ mod prop_test {
                 let complement = (!range).into_single().unwrap();
 
                 prop_assert!((range & complement).is_empty());
-                prop_assert_eq!(range.union(complement)
-                        .unwrap_or_else(|_| Interval::Full.into())
-                        .into_single().unwrap(),
-                    Interval::Full
+                prop_assert_eq!(
+                    range.union(complement).into_single().unwrap(),
+                    Interval::Full,
                 );
             }
 
@@ -647,9 +653,7 @@ mod prop_test {
             fn reflexive_set_operations(range: Interval<Int>) {
                 prop_assert_eq!(range & range, range);
                 prop_assert_eq!((range | range).into_single().unwrap(), range);
-                if !range.is_empty() {
-                    prop_assert_eq!(range.enclosure(range).unwrap(), range);
-                }
+                prop_assert_eq!(range.enclosure(range), range);
                 prop_assert!(range.is_super(&range));
                 prop_assert!(range.is_sub(&range));
                 prop_assert!(!range.is_disjoint(&range));

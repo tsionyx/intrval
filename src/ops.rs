@@ -481,9 +481,7 @@ where
     type Output = OneOrPair<Self>;
 
     fn bitor(self, rhs: U) -> Self::Output {
-        self.union(rhs).unwrap_or_else(|(left, right)| {
-            OneOrPair::One(right.into_bounds().map_or(left, Self::from_bounds))
-        })
+        self.union(rhs)
     }
 }
 
