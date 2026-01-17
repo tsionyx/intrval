@@ -308,7 +308,7 @@ impl<T> Interval<T> {
     ///
     /// ```
     /// # use intrval::interval;
-    /// assert_eq!(interval!(_: u8).len().into_diff().unwrap(), 0);
+    /// assert_eq!(interval!(0: u8).len().into_diff().unwrap(), 0);
     /// assert!(interval!(< 5).len().into_diff().is_none());
     /// assert!(interval!(<= 3.2).len().into_diff().is_none());
     /// assert!(interval!(> -10).len().into_diff().is_none());
@@ -323,7 +323,7 @@ impl<T> Interval<T> {
     /// assert_eq!(interval!([0.0, 1.0]).len().into_diff().unwrap(), 1.0);
     /// assert_eq!(interval!([5.0, 1.0]).len().into_diff().unwrap(), 0.0);
     /// assert_eq!(interval!((=0.0, =1.0)).len().into_diff().unwrap(), 1.0);
-    /// assert!(interval!(..: i32).len().into_diff().is_none());
+    /// assert!(interval!(U: i32).len().into_diff().is_none());
     /// ```
     pub fn len(&self) -> Size<<T as core::ops::Sub>::Output>
     where
@@ -388,8 +388,8 @@ impl<T> Interval<T> {
 /// ```
 /// # use intrval::{interval, Interval::{self, *}, Singleton as _};
 ///
-/// assert_eq!(interval!(_), Empty::<i32>);
-/// assert_eq!(interval!(_: u8), Empty);
+/// assert_eq!(interval!(0), Empty::<i32>);
+/// assert_eq!(interval!(0: u8), Empty);
 ///
 /// assert_eq!(interval!(< 5), LessThan(5));
 /// assert_eq!(interval!(<= 3.2), LessThanOrEqual(3.2));
@@ -404,8 +404,8 @@ impl<T> Interval<T> {
 /// assert_eq!(interval!([0.0, 1.0]), Closed((0.0, 1.0)));
 /// assert_eq!(interval!((=0.0, =1.0)), Closed((0.0, 1.0)));
 ///
-/// assert_eq!(interval!(..), Full::<f64>);
-/// assert_eq!(interval!(..: f32), Full);
+/// assert_eq!(interval!(U), Full::<f64>);
+/// assert_eq!(interval!(U: f32), Full);
 /// ```
 macro_rules! interval {
     ($ctor:tt: $t:ty) => {
@@ -413,7 +413,7 @@ macro_rules! interval {
         //  when the https://github.com/rust-lang/rust/issues/151202 gets fixed
         $crate::Interval::<$t>::from($crate::interval!($ctor))
     };
-    (_) => {
+    (0) => {
         $crate::Interval::Empty
     };
     (< $x:expr) => {
@@ -453,7 +453,7 @@ macro_rules! interval {
     ( [ $a:expr , $b:expr ] ) => {
         $crate::Interval::Closed(($a, $b))
     };
-    (..) => {
+    (U) => {
         $crate::Interval::Full
     };
 }

@@ -495,7 +495,7 @@ mod tests {
 
     #[test]
     fn empty() {
-        let i: Interval<f64> = interval!(_);
+        let i: Interval<f64> = interval!(0);
         assert!(!i.contains(&-100.0));
         assert!(!i.contains(&0.0));
         assert!(!i.contains(&100.0));
@@ -624,7 +624,7 @@ mod tests {
 
     #[test]
     fn full() {
-        let i: Interval<f64> = interval!(..);
+        let i: Interval<f64> = interval!(U);
         assert!(i.contains(&-100.0));
         assert!(i.contains(&0.0));
         assert!(i.contains(&4.999_999));
@@ -647,8 +647,8 @@ mod ops_tests {
 
     #[test]
     fn neg() {
-        let i = -interval!(_: i8);
-        assert_eq!(i, interval!(_));
+        let i = -interval!(0: i8);
+        assert_eq!(i, interval!(0));
 
         let i = -interval!(< 5.0);
         assert_eq!(i, interval!(> -5.0));
@@ -677,14 +677,14 @@ mod ops_tests {
         let i = -interval!([5.0, 7.0]);
         assert_eq!(i, interval!([-7.0, -5.0]));
 
-        let i = -interval!(..: f64);
-        assert_eq!(i, interval!(..));
+        let i = -interval!(U: f64);
+        assert_eq!(i, interval!(U));
     }
 
     #[test]
     fn not() {
-        let i = !interval!(_: i16);
-        assert_eq!(i, OneOrPair::One(interval!(..)));
+        let i = !interval!(0: i16);
+        assert_eq!(i, OneOrPair::One(interval!(U)));
 
         let i = !interval!(< 5.0);
         assert_eq!(i, OneOrPair::One(interval!(>= 5.0)));
@@ -713,8 +713,8 @@ mod ops_tests {
         let i = !interval!([5.0, 7.0]);
         assert_eq!(i, OneOrPair::Pair((interval!(< 5.0), interval!(> 7.0))));
 
-        let i = !interval!(..: f64);
-        assert_eq!(i, OneOrPair::One(interval!(_)));
+        let i = !interval!(U: f64);
+        assert_eq!(i, OneOrPair::One(interval!(0)));
     }
 }
 
@@ -746,7 +746,7 @@ mod add_tests {
         assert_eq!(a + b, interval!(> 10));
 
         let c = interval!(< 6);
-        assert_eq!(a + c, interval!(..));
+        assert_eq!(a + c, interval!(U));
     }
 
     #[test]
@@ -777,7 +777,7 @@ mod add_tests {
     fn two_unbounded_diff() {
         let a = interval!(>= 2);
         let b = interval!(> 8);
-        assert_eq!(a - b, interval!(..));
+        assert_eq!(a - b, interval!(U));
 
         let c = interval!(< 6);
         assert_eq!(a - c, interval!(> -4));
@@ -799,11 +799,11 @@ mod mul_tests {
 
     #[test]
     fn mul_by_positive_scalar() {
-        assert_eq!(interval!(_: u8) * 100, interval!(_));
+        assert_eq!(interval!(0: u8) * 100, interval!(0));
         assert_eq!(interval!(< -2) * 5, interval!(< -10));
         assert_eq!(interval!((2, 3)) * 2, interval!((4, 6)));
         assert_eq!(interval!([5.0, 11.0]) * 3.5, interval!([17.5, 38.5]));
-        assert_eq!(interval!(..: u8) * 100, interval!(..));
+        assert_eq!(interval!(U: u8) * 100, interval!(U));
     }
 
     #[test]
@@ -815,21 +815,21 @@ mod mul_tests {
 
     #[test]
     fn mul_by_negative_scalar() {
-        assert_eq!(interval!(_: i8) * -100, interval!(_));
+        assert_eq!(interval!(0: i8) * -100, interval!(0));
         assert_eq!(interval!(>= 13) * -2, interval!(<= -26));
         assert_eq!(interval!((-2, 3)) * -2, interval!((-6, 4)));
         assert_eq!(interval!([5.0, 11.0]) * -3.5, interval!([-38.5, -17.5]));
-        assert_eq!(interval!(..: i8) * -100, interval!(..));
+        assert_eq!(interval!(U: i8) * -100, interval!(U));
     }
 
     #[test]
     #[allow(clippy::erasing_op)]
     fn mul_by_zero() {
-        assert_eq!(interval!(_: u8) * 0, interval!(_));
+        assert_eq!(interval!(0: u8) * 0, interval!(0));
         assert_eq!(interval!(< -2) * 0, interval!([0, 0]));
         assert_eq!(interval!((2, 3)) * 0, interval!([0, 0]));
         assert_eq!(interval!([5.0, 11.0]) * 0.0, interval!([0.0, 0.0]));
-        assert_eq!(interval!(..: u8) * 0, interval!([0, 0]));
+        assert_eq!(interval!(U: u8) * 0, interval!([0, 0]));
     }
 
     fn cmp_mul_bound<T: PartialEq + core::fmt::Debug>(
@@ -846,7 +846,7 @@ mod mul_tests {
 
     #[test]
     fn mul_to_infinite_bound() {
-        let (neg_inf, pos_inf) = interval!(..: i32).into_bounds().unwrap();
+        let (neg_inf, pos_inf) = interval!(U: i32).into_bounds().unwrap();
 
         cmp_mul_bound(interval!(>= 0).mul_bound(pos_inf), interval!(>= 0));
         cmp_mul_bound(interval!(> 0).mul_bound(pos_inf), interval!(> 0));
@@ -854,7 +854,7 @@ mod mul_tests {
         cmp_mul_bound(interval!(<= 0).mul_bound(pos_inf), interval!(<= 0));
         cmp_mul_bound(interval!(< 0).mul_bound(pos_inf), interval!(< 0));
         cmp_mul_bound(interval!(<= -1).mul_bound(pos_inf), interval!(< 0));
-        cmp_mul_bound(interval!(<= 1).mul_bound(pos_inf), interval!(..));
+        cmp_mul_bound(interval!(<= 1).mul_bound(pos_inf), interval!(U));
 
         cmp_mul_bound(interval!(>= 0).mul_bound(neg_inf), interval!(<= 0));
         cmp_mul_bound(interval!(> 0).mul_bound(neg_inf), interval!(< 0));
@@ -862,7 +862,7 @@ mod mul_tests {
         cmp_mul_bound(interval!(<= 0).mul_bound(neg_inf), interval!(>= 0));
         cmp_mul_bound(interval!(< 0).mul_bound(neg_inf), interval!(> 0));
         cmp_mul_bound(interval!(<= -1).mul_bound(neg_inf), interval!(> 0));
-        cmp_mul_bound(interval!(<= 1).mul_bound(neg_inf), interval!(..));
+        cmp_mul_bound(interval!(<= 1).mul_bound(neg_inf), interval!(U));
     }
 
     #[test]
@@ -962,8 +962,8 @@ mod mul_tests {
         let r1 = interval!(> -1);
         let r2 = interval!(>= -1);
 
-        assert_eq!(r1 * r2, interval!(..));
-        assert_eq!(r2 * r1, interval!(..));
+        assert_eq!(r1 * r2, interval!(U));
+        assert_eq!(r2 * r1, interval!(U));
     }
 
     #[test]

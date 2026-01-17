@@ -25,7 +25,7 @@ impl<T> Interval<T> {
             Self::LeftOpen((a, b)) => Pair((("(", a), ("]", b))),
             Self::RightOpen((a, b)) => Pair((("[", a), (")", b))),
             Self::Closed((a, b)) => Pair((("[", a), ("]", b))),
-            Self::Full => return Zero("(..)"),
+            Self::Full => return Zero("(_)"),
         };
 
         More(notation)
@@ -61,7 +61,7 @@ mod tests {
 
     #[test]
     fn empty() {
-        let i: Interval<f64> = interval!(_);
+        let i: Interval<f64> = interval!(0);
         assert_eq!(i.to_string(), "{}");
     }
 
@@ -125,8 +125,8 @@ mod tests {
 
     #[test]
     fn full() {
-        let i: Interval<f64> = interval!(..);
-        assert_eq!(i.to_string(), "(..)");
+        let i: Interval<f64> = interval!(U);
+        assert_eq!(i.to_string(), "(_)");
     }
 }
 
@@ -142,7 +142,7 @@ mod deser_tests {
     fn empty() {
         let j = json!("EMPTY");
         let i: Interval<f64> = serde_json::from_value(j).unwrap();
-        assert_eq!(i, interval!(_));
+        assert_eq!(i, interval!(0));
     }
 
     #[test]
@@ -321,6 +321,6 @@ mod deser_tests {
     fn full() {
         let j = json!("FULL");
         let i: Interval<f64> = serde_json::from_value(j).unwrap();
-        assert_eq!(i, interval!(..));
+        assert_eq!(i, interval!(U));
     }
 }

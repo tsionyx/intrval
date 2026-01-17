@@ -6,7 +6,7 @@ use intrval::{interval, Interval, SetOps as _, Size};
 
 #[allow(clippy::cognitive_complexity)]
 fn main() {
-    let i0: Interval<i16> = interval!(_);
+    let i0: Interval<i16> = interval!(0);
     assert_eq!(i0, Interval::Empty);
 
     let igt2: Interval<i16> = interval!(> 2);
@@ -21,22 +21,22 @@ fn main() {
     let i5to20_excl: Interval<i16> = interval!((5, =20));
     assert_eq!(i5to20_excl, Interval::LeftOpen((5, 20)));
 
-    let iuni: Interval<i16> = interval!(..);
+    let iuni: Interval<i16> = interval!(U);
     assert_eq!(iuni, Interval::Full);
 
     // ===== common functions =====
-    assert!(interval!(_: i32).is_empty());
+    assert!(interval!(0: i32).is_empty());
     assert!(interval!((1, 0)).is_empty());
     assert!(interval!((0, 0)).is_empty());
     assert!(!(interval!([0, 0]).is_empty()));
-    assert!(interval!(..: i32).is_full());
+    assert!(interval!(U: i32).is_full());
 
     let igt10 = interval!(> 10);
     assert!(igt10.contains(&11));
     assert!(!(igt10.contains(&10)));
-    assert!(!(interval!(_).contains(&0)));
+    assert!(!(interval!(0).contains(&0)));
 
-    assert_eq!(interval!(_: i8).len(), Size::Empty);
+    assert_eq!(interval!(0: i8).len(), Size::Empty);
     assert_eq!(interval!((1, 0)).len(), Size::Empty);
     assert_eq!(interval!([1, 1]).len(), Size::SinglePoint);
     assert_eq!(interval!((-10, =10)).len(), Size::Finite(20));
@@ -54,14 +54,14 @@ fn main() {
     assert_eq!(-interval!([-2, 10]), interval!([-10, 2]));
 
     // full and empy does not change with scalars
-    assert_eq!(interval!(_) + 5, interval!(_));
-    assert_eq!(interval!(_: i32) * 2, interval!(_));
-    assert_eq!(interval!(..) - 100, interval!(..));
-    assert_eq!(interval!(..: i32) * -5, interval!(..));
+    assert_eq!(interval!(0) + 5, interval!(0));
+    assert_eq!(interval!(0: i32) * 2, interval!(0));
+    assert_eq!(interval!(U) - 100, interval!(U));
+    assert_eq!(interval!(U: i32) * -5, interval!(U));
     // however, multiplying by 0 is different
     #[allow(clippy::erasing_op)]
     {
-        assert_eq!(interval!(..: i32) * 0, interval!([0, 0]));
+        assert_eq!(interval!(U: i32) * 0, interval!([0, 0]));
     }
 
     assert_eq!(interval!(> 2) + 3, interval!(> 5));
@@ -73,11 +73,11 @@ fn main() {
     assert_eq!(interval!([16, 79]) / -8, Interval::Closed((-9, -2)));
 
     // ===== interval arithmetic =====
-    let i0 = interval!(_: i32);
+    let i0 = interval!(0: i32);
     let igt10 = interval!(> 10);
     let i_2to10_incl = interval!([-2, 10]);
     let i5to20_excl = interval!((5, =20));
-    let iuni = interval!(..: i32);
+    let iuni = interval!(U: i32);
 
     assert_eq!(igt10 + i_2to10_incl, interval!(> 8));
     // adding degenerate does not change the normal one
@@ -95,7 +95,7 @@ fn main() {
     // positive (+inf) times positive is positive
     assert_eq!(interval!(> 2) * igt10, interval!(> 20));
     // positive (+inf) times (negative and positive) is (-inf, +inf)
-    assert_eq!(igt10 * i_2to10_incl, interval!(..));
+    assert_eq!(igt10 * i_2to10_incl, interval!(U));
     assert_eq!(igt10 * i5to20_excl, interval!(> 50));
     // Interval::Full is neutral over multiplication
     assert_eq!(i5to20_excl * iuni, iuni);
@@ -150,8 +150,8 @@ fn main() {
         // reorders the input intervals in left-to-right order if they do not intersect
         (interval!([3, 4]), interval!((5, 10)))
     );
-    assert_eq!((interval!(_) | igt2).into_single().unwrap(), igt2);
-    assert_eq!((igt2 | interval!(_)).into_single().unwrap(), igt2);
+    assert_eq!((interval!(0) | igt2).into_single().unwrap(), igt2);
+    assert_eq!((igt2 | interval!(0)).into_single().unwrap(), igt2);
 
     assert_eq!(
         interval!([-2, 10]).enclosure(igt10 * 2).unwrap(),

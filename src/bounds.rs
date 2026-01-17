@@ -473,7 +473,7 @@ mod tests {
 
     #[test]
     fn into_bounds() {
-        assert!(interval!(_: i32).into_bounds().is_err());
+        assert!(interval!(0: i32).into_bounds().is_err());
         assert_eq!(
             interval!(<5).into_bounds().unwrap(),
             (Infinite, Excluded(5))
@@ -507,7 +507,7 @@ mod tests {
             (Included(3), Included(7))
         );
         assert_eq!(
-            interval!(..: i32).into_bounds().unwrap(),
+            interval!(U: i32).into_bounds().unwrap(),
             (Infinite, Infinite)
         );
     }

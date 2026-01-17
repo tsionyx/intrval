@@ -48,7 +48,9 @@ _2026-01-16_
   a (possibly infinite) point with its
   [neighbourhood](https://en.wikipedia.org/wiki/Neighbourhood_(mathematics)#Neighbourhood_of_a_point).
 
-- minor changes for the `interval!` macro to allow to specify type of the produced `Interval`.
+- change the `interval!` macro syntax to create:
+  - empty `Interval::Empty` with `interval!(0)`;
+  - universe `Interval::Full` with `interval!(U)`;
 
 ## Added
 

@@ -237,17 +237,17 @@ mod prop_test {
 
         #[test]
         fn empty_and_full_are_preserving_under_add(increment in params_range()) {
-            let empty = interval!(_: Int);
+            let empty = interval!(0: Int);
             prop_assert_eq!(empty + increment, empty);
 
-            let full = interval!(..: Int);
+            let full = interval!(U: Int);
             prop_assert_eq!(full + increment, full);
         }
 
         #[test]
         fn empty_is_reduced_and_not_clamped(range: Interval<Int>, x in params_range()) {
             let inv1 = range.is_empty();
-            let inv2 = range == interval!(_);
+            let inv2 = range == interval!(0);
             let inv3 = range.clamp(x).is_err();
             let invariants = [inv1, inv2, inv3];
             prop_assert!(invariants.iter().all(|&b| b) || invariants.iter().all(|&b| !b));
@@ -314,7 +314,7 @@ mod prop_test {
             #[test]
             // i + EMPTY == i
             fn adding_empty_interval_is_preserving(range in non_empty()) {
-                let sum = range + interval!(_: Int);
+                let sum = range + interval!(0: Int);
                 prop_assert_eq!(range, sum);
 
                 let sum = range + interval!([0, -1]); // also empty
@@ -327,7 +327,7 @@ mod prop_test {
             #[test]
             // i + FULL == FULL
             fn adding_full_interval_is_full(range: Interval<Int>) {
-                let sum = range + interval!(..: Int);
+                let sum = range + interval!(U: Int);
                 prop_assert_eq!(sum, Interval::Full);
             }
 
@@ -361,7 +361,7 @@ mod prop_test {
             #[test]
             // i - EMPTY == i
             fn sub_empty_interval_is_preserving(range in non_empty()) {
-                let diff = range - interval!(_: Int);
+                let diff = range - interval!(0: Int);
                 prop_assert_eq!(range, diff);
 
                 let diff = range - interval!([0, -1]); // also empty
@@ -372,7 +372,7 @@ mod prop_test {
             fn sub_from_empty_is_neg(
                 range in BoundedInterval::arbitrary_with(negated_interval()).prop_map(|i| i.0),
             ) {
-                let diff = interval!(_: Int) - range;
+                let diff = interval!(0: Int) - range;
                 prop_assert_eq!(range, -diff);
 
                 let diff = interval!((2, =2)) - range; // also empty
@@ -383,10 +383,10 @@ mod prop_test {
             // i - FULL == FULL
             // FULL - i == FULL
             fn sub_full_interval_is_full(range: Interval<Int>) {
-                let diff = range - interval!(..: Int);
+                let diff = range - interval!(U: Int);
                 prop_assert_eq!(diff, Interval::Full);
 
-                let diff = interval!(..: Int) - range;
+                let diff = interval!(U: Int) - range;
                 prop_assert_eq!(diff, Interval::Full);
             }
 
@@ -446,10 +446,10 @@ mod prop_test {
 
             #[test]
             fn empty_and_full_are_preserving(factor in params_range()) {
-                let empty = interval!(_: Int);
+                let empty = interval!(0: Int);
                 prop_assert_eq!(empty * factor, empty);
 
-                let full = interval!(..: Int);
+                let full = interval!(U: Int);
                 if factor == 0 {
                     prop_assert_eq!(full * factor, interval!([0, 0]));
                 } else {

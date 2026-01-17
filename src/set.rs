@@ -205,11 +205,11 @@ mod tests {
         let b = interval!(>=-3);
         assert_eq!(a & b, interval!([-3, 5]));
 
-        let a = interval!(..: i32);
-        let b = interval!(_: i32);
+        let a = interval!(U: i32);
+        let b = interval!(0: i32);
         assert!(matches!(
             a.intersect(b).unwrap_err(),
-            (interval!(..), interval!(_))
+            (interval!(U), interval!(0))
         ));
     }
 
