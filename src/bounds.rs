@@ -190,6 +190,11 @@ impl<const SIDE: bool, T> Endpoint<SIDE, T> {
         }
     }
 
+    /// Whether the endpoint is finite.
+    pub const fn is_finite(&self) -> bool {
+        matches!(self.as_ext_point(), ExtPoint::Finite(_))
+    }
+
     pub(crate) const fn bound_val(&self) -> Option<&T> {
         match self.as_ext_point() {
             ExtPoint::Finite((val, _ordering)) => Some(val),

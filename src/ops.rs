@@ -1,8 +1,8 @@
 use core::{
     cmp::Ordering,
     ops::{
-        Add, BitAnd, BitOr, Bound, Div, Mul, Neg, Not, Range, RangeBounds, RangeFrom, RangeFull,
-        RangeInclusive, RangeTo, RangeToInclusive, Sub,
+        Add, BitAnd, BitOr, BitXor, Bound, Div, Mul, Neg, Not, Range, RangeBounds, RangeFrom,
+        RangeFull, RangeInclusive, RangeTo, RangeToInclusive, Sub,
     },
 };
 
@@ -482,6 +482,21 @@ where
 
     fn bitor(self, rhs: U) -> Self::Output {
         self.union(rhs)
+    }
+}
+
+impl<T, U> BitXor<U> for Interval<T>
+where
+    Self: SetOps<T> + From<<Self as IntoBounds<T>>::Error>,
+    T: Ord,
+    U: IntoBounds<T> + From<U::Error>,
+    for<'a> &'a U: IntoBounds<&'a T>,
+{
+    type Output = OneOrPair<Self>;
+
+    fn bitxor(self, rhs: U) -> Self::Output {
+        self.symmetric_difference(rhs)
+            .unwrap_or_else(|_| OneOrPair::One(Self::Empty))
     }
 }
 

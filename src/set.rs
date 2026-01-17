@@ -5,7 +5,153 @@ use crate::{
 
 /// Provides a bunch of set operations for [`Bounded`] types.
 pub trait SetOps<T>: Bounded<T> {
-    // TODO: difference, symmetric_difference (+core::ops::Xor)
+    /// Get the set difference between `self` and `other`
+    /// i.e. the span(s) of values that are in `self` but **not** in `other`.
+    ///
+    /// # Errors
+    /// Return `Err((self, other))` if `self` is a (not degenerate) subset of `other`.
+    /// In this case it is safe to assume the difference is _degenerate_.
+    fn difference<R>(self, other: R) -> Result<OneOrPair<Self>, (Self, R)>
+    where
+        T: Ord,
+        Self: From<Self::Error>,
+        R: IntoBounds<T> + From<<R as IntoBounds<T>>::Error>,
+
+        for<'a> &'a Self: IntoBounds<&'a T>,
+        for<'a> &'a R: IntoBounds<&'a T>,
+    {
+        if self.is_sub(&other) {
+            return if (&self).into_bounds().is_err() {
+                // if `self` is degenerate, just return it as is
+                Ok(self.into())
+            } else {
+                Err((self, other))
+            };
+        }
+
+        if self.is_disjoint(&other) {
+            return Ok(self.into());
+        }
+
+        let ((a, b), (c, d)) = match pair_into_bounds(self, other) {
+            Ok(bounds) => bounds,
+            Err((left, _right)) => {
+                // if either _left_ or _right_ is degenerate, return _left_ as is:
+                // - if _left_ is degenerate, then we have nothing to subtract from;
+                // - if _right_ is degenerate, then there is nothing to subtract, just return _left_ as is.
+                return Ok(left.into());
+            }
+        };
+
+        let c_finite = c.is_finite();
+        let d_finite = d.is_finite();
+
+        let (left, right) = (Self::from_bounds((a, !c)), Self::from_bounds((!d, b)));
+
+        match (c_finite, d_finite) {
+            (true, true) => Ok(left.union(right)),
+            (true, false) => {
+                // the `right` is `(-inf, b)` is a super of the `self` and useless for diff
+                Ok(left.into())
+            }
+            (false, true) => {
+                // the `left` is `(a, +inf)` is a super of the `self` and useless for diff
+                Ok(right.into())
+            }
+            (false, false) => {
+                unreachable!(
+                    "This variant is only possible when the `right` is universal, which is handled above"
+                )
+            }
+        }
+    }
+
+    /// Get the symmetric difference between `self` and `other`
+    /// i.e. the span(s) of values that are
+    /// in one of the intervals but **not** in other.
+    ///
+    /// # Notes
+    /// When the inputs do not overlap, the result is equivalent to their [union][Self::union].
+    ///
+    /// # Errors
+    /// Return `other` if the inputs are equal and **not degenerate**.
+    /// In this case it is safe to assume the symmetric difference is _degenerate_.
+    ///
+    /// Is is tempting here to make the return type `Result<_, Self>`,
+    /// because it is very easy for the `Err` branch
+    /// to convert the `R` into `Self`, but this can lead
+    /// to accident use of `.unwrap_or_else(OneOrPair::One)` which is not correct:
+    /// the `Err` data is here only for diagnostic use and should be fallen back
+    /// with manually constructed _degenerate_ interval.
+    fn symmetric_difference<R>(self, other: R) -> Result<OneOrPair<Self>, R>
+    where
+        T: Ord,
+        Self: From<Self::Error>,
+        R: IntoBounds<T> + From<<R as IntoBounds<T>>::Error>,
+
+        for<'a> &'a Self: IntoBounds<&'a T>,
+        for<'a> &'a R: IntoBounds<&'a T>,
+    {
+        if self.is_disjoint(&other) {
+            return Ok(self.union(other));
+        }
+
+        let has_equal_bounds = match ((&self).into_bounds(), (&other).into_bounds()) {
+            (Ok(left), Ok(right)) => Some(left == right),
+            (Ok(_), Err(_)) | (Err(_), Ok(_)) => Some(false),
+            (Err(_), Err(_)) => None,
+        };
+
+        match has_equal_bounds {
+            Some(true) => {
+                // the intervals are the same => symmetric difference is empty (degenerate)
+                return Err(other);
+            }
+            Some(false) => {}
+            None => {
+                // both are degenerate, just return `self` as is
+                return Ok(self.into());
+            }
+        }
+
+        let ((a, b), (c, d)) = match pair_into_bounds(self, other) {
+            Ok(bounds) => bounds,
+            Err((left, right)) => {
+                // if _right_ is degenerate, just return `left` as is,
+                // otherwise the `left` should be degenerate, so transform `right` into `Self` and return it.
+                let res = right.into_bounds().map_or(left, Self::from_bounds);
+                return Ok(res.into());
+            }
+        };
+
+        let [min_start, max_start] = minmax(a, c);
+        let [min_end, max_end] = minmax(b, d);
+
+        let c_finite = max_start.is_finite();
+        let d_finite = min_end.is_finite();
+
+        let (left, right) = (
+            Self::from_bounds((min_start, !max_start)),
+            Self::from_bounds((!min_end, max_end)),
+        );
+
+        match (c_finite, d_finite) {
+            (true, true) => Ok(left.union(right)),
+            (true, false) => {
+                // the `right` is `(-inf, +inf)` and useless for `union`
+                Ok(left.into())
+            }
+            (false, true) => {
+                // the `left` is `(-inf, +inf)` and useless for `union`
+                Ok(right.into())
+            }
+            (false, false) => {
+                unreachable!(
+                    "This variant is only possible when both intervals are universal, which is handled above"
+                )
+            }
+        }
+    }
 
     /// Compute the intersection of `self` and `other`.
     ///
@@ -14,6 +160,7 @@ pub trait SetOps<T>: Bounded<T> {
     ///
     /// # Errors
     /// Return `other` if it is degenerate (for the normal `self`).
+    /// In this case it is safe to assume the intersection is _degenerate_.
     fn intersect<R>(self, other: R) -> Result<Self, R>
     where
         T: Ord,
@@ -224,6 +371,133 @@ mod tests {
     use crate::{interval, Interval};
 
     use super::*;
+
+    #[test]
+    fn diff() {
+        let a = interval!((0, 1));
+        let b = interval!([-2, 0]);
+        assert_eq!(a.difference(b).unwrap().into_single().unwrap(), a);
+        assert_eq!(b.difference(a).unwrap().into_single().unwrap(), b);
+
+        let a = interval!([3, 7]);
+        let b = interval!((5, 10));
+        assert_eq!(
+            a.difference(b).unwrap().into_single().unwrap(),
+            interval!([3, 5])
+        );
+        assert_eq!(
+            b.difference(a).unwrap().into_single().unwrap(),
+            interval!((7, 10))
+        );
+
+        let a = interval!(<5);
+        let b = interval!(>3);
+        assert_eq!(
+            a.difference(b).unwrap().into_single().unwrap(),
+            interval!(<=3)
+        );
+        assert_eq!(
+            b.difference(a).unwrap().into_single().unwrap(),
+            interval!(>=5)
+        );
+
+        let a = interval!(<=5);
+        let b = interval!(>=-3);
+        assert_eq!(
+            a.difference(b).unwrap().into_single().unwrap(),
+            interval!(< -3)
+        );
+        assert_eq!(
+            b.difference(a).unwrap().into_single().unwrap(),
+            interval!(>5)
+        );
+
+        let a = interval!(U: i32);
+        let b = interval!(0: i32);
+        assert_eq!(
+            a.difference(b).unwrap().into_single().unwrap(),
+            interval!(U),
+        );
+        assert_eq!(
+            b.difference(a).unwrap().into_single().unwrap(),
+            interval!(0)
+        );
+    }
+
+    #[test]
+    fn symm_diff() {
+        let a = interval!((0, 1));
+        let b = interval!((=-2, 0));
+        assert_eq!(
+            a.symmetric_difference(b).unwrap().into_pair().unwrap(),
+            (b, a)
+        );
+        assert_eq!(
+            b.symmetric_difference(a).unwrap().into_pair().unwrap(),
+            (b, a)
+        );
+
+        let a = interval!((0, 1));
+        let b = interval!([-2, 0]);
+        // joined in `0` into a single one
+        assert_eq!(
+            a.symmetric_difference(b).unwrap().into_single().unwrap(),
+            interval!((=-2, 1))
+        );
+        assert_eq!(
+            a.symmetric_difference(b).unwrap().into_single().unwrap(),
+            interval!((=-2, 1))
+        );
+
+        let a = interval!([3, 7]);
+        let b = interval!((5, 10));
+        assert_eq!(
+            a.symmetric_difference(b).unwrap().into_pair().unwrap(),
+            (interval!([3, 5]), interval!((7, 10)))
+        );
+        assert_eq!(
+            b.symmetric_difference(a).unwrap().into_pair().unwrap(),
+            (interval!([3, 5]), interval!((7, 10)))
+        );
+
+        let a = interval!(<5);
+        let b = interval!(>3);
+        assert_eq!(
+            a.symmetric_difference(b).unwrap().into_pair().unwrap(),
+            (interval!(<=3), interval!(>=5))
+        );
+        assert_eq!(
+            b.symmetric_difference(a).unwrap().into_pair().unwrap(),
+            (interval!(<=3), interval!(>=5))
+        );
+
+        let a = interval!(<=5);
+        let b = interval!(>=-3);
+        assert_eq!(
+            a.symmetric_difference(b).unwrap().into_pair().unwrap(),
+            (interval!(< -3), interval!(>5))
+        );
+        assert_eq!(
+            b.symmetric_difference(a).unwrap().into_pair().unwrap(),
+            (interval!(< -3), interval!(>5))
+        );
+
+        let a = interval!([1, 9]);
+        let b = interval!(0);
+        assert_eq!(a.symmetric_difference(b).unwrap().into_single().unwrap(), a);
+        assert_eq!(b.symmetric_difference(a).unwrap().into_single().unwrap(), a);
+
+        let a = interval!(U: i32);
+        let b = interval!(0: i32);
+        assert_eq!(
+            a.symmetric_difference(b).unwrap().into_single().unwrap(),
+            interval!(U)
+        );
+        assert_eq!(
+            b.symmetric_difference(a).unwrap().into_single().unwrap(),
+            interval!(U)
+        );
+    }
 
     #[test]
     fn intersect() {

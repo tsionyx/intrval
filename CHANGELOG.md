@@ -27,6 +27,9 @@ _2026-01-16_
     - adds the `.from_bounds()`
     - removes the requirement `type Error: Into<Self>`;
   - `SetOps<T>` to define operations:
+    - `.difference(self, other: impl IntoBounds)` to ignore the intersection;
+    - `.symmetric_difference(self, other: impl IntoBounds)`
+      to only take values from one of the spans;
     - `.intersect(self, other: impl IntoBounds)`
       (return type changed: `Result<Self, (Self, R)>` -> `Result<Self, R>`);
     - `.union(self, other: impl IntoBounds)`

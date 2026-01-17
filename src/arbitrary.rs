@@ -555,10 +555,25 @@ mod prop_test {
             }
 
             #[test]
+            fn difference_on_err_returns_original(range1: Interval<Int>, range2: Interval<Int>) {
+                if let Err((a, b)) = range1.difference(range2) {
+                    prop_assert_eq!(a, range1);
+                    prop_assert_eq!(b, range2);
+                }
+            }
+
+            #[test]
             fn intersect_on_err_returns_original(range1: Interval<Int>, range2: Interval<Int>) {
                 if let Err(fail) = range1.intersect(range2) {
                     prop_assert_eq!(fail, range2);
                 }
+            }
+
+            #[test]
+            fn symmetric_difference_is_reflexive(range1: Interval<Int>, range2: Interval<Int>) {
+                let a = range1.symmetric_difference(range2).unwrap_or_else(crate::OneOrPair::One);
+                let b = range2.symmetric_difference(range1).unwrap_or_else(crate::OneOrPair::One);
+                prop_assert_eq!(a, b);
             }
 
             #[test]
@@ -651,12 +666,140 @@ mod prop_test {
 
             #[test]
             fn reflexive_set_operations(range: Interval<Int>) {
+                let diff = range.difference(range);
+                if range.is_empty() {
+                    prop_assert_eq!(diff.unwrap().into_single().unwrap(), range);
+                } else {
+                    prop_assert!(diff.is_err());
+                }
+                let diff = range.symmetric_difference(range);
+                if range.is_empty() {
+                    prop_assert_eq!(diff.unwrap().into_single().unwrap(), range);
+                } else {
+                    prop_assert_eq!(diff.unwrap_err(), range);
+                }
                 prop_assert_eq!(range & range, range);
                 prop_assert_eq!((range | range).into_single().unwrap(), range);
                 prop_assert_eq!(range.enclosure(range), range);
                 prop_assert!(range.is_super(&range));
                 prop_assert!(range.is_sub(&range));
                 prop_assert!(!range.is_disjoint(&range));
+            }
+
+            #[test]
+            fn difference_from_universe_is_complement(range: Interval<Int>) {
+                let diff = Interval::<Int>::Full.difference(range).unwrap_or_else(|(a, b)| {
+                    assert!(a.is_full());
+                    assert!(b.is_full());
+                    Interval::Empty.into()
+                });
+                prop_assert_eq!(diff, !range);
+            }
+
+            #[test]
+            fn difference_is_equivalent_intersect_with_complement(range1: Interval<Int>, range2: Interval<Int>) {
+                use crate::OneOrPair;
+                match !range2 {
+                    OneOrPair::One(not_range2) => {
+                        let inter = range1 & not_range2;
+                        let diff = range1.difference(range2).map_or(
+                            Interval::Empty, |diff| diff.into_single().unwrap());
+                        prop_assert!(diff.is_sub(&range1));
+                        prop_assert_eq!(diff, inter);
+                    }
+                    OneOrPair::Pair((a, b)) => {
+                        let inter1 = range1 & a;
+                        let inter2 = range1 & b;
+                        match range1.difference(range2).unwrap_or_else(|_| Interval::Empty.into()) {
+                            OneOrPair::One(x) => {
+                                prop_assert!(x.is_sub(&range1));
+
+                                if inter1.is_empty() {
+                                    prop_assert_eq!(x, inter2);
+                                } else if inter2.is_empty() {
+                                    prop_assert_eq!(x, inter1);
+                                } else {
+                                    panic!("Expected a pair difference, got a single interval: {x:?}");
+                                }
+                            }
+                            OneOrPair::Pair((diff1, diff2)) => {
+                                prop_assert!(diff1.is_sub(&range1));
+                                prop_assert!(diff2.is_sub(&range1));
+
+                                prop_assert!(range2.is_sub(&range1));
+                                prop_assert_eq!(diff1, inter1);
+                                prop_assert_eq!(diff2, inter2);
+                            }
+                        }
+                    }
+                }
+            }
+
+            #[test]
+            fn symmetric_difference_with_empty_is_preserving(range: Interval<Int>) {
+                let e = Interval::<Int>::Empty;
+
+                let diff = e.symmetric_difference(range);
+                prop_assert_eq!(diff.unwrap().into_single().unwrap(), range);
+
+                let diff = range.symmetric_difference(e);
+                prop_assert_eq!(diff.unwrap().into_single().unwrap(), range);
+            }
+
+            #[test]
+            fn symmetric_difference_with_universe_is_complement(range: Interval<Int>) {
+                let u = Interval::<Int>::Full;
+                let diff = u.symmetric_difference(range).unwrap_or_else(|r| {
+                    assert!(r.is_empty() || r.is_full());
+                    !r
+                });
+                prop_assert_eq!(diff, !range);
+            }
+
+            #[test]
+            fn symmetric_difference_is_equivalent_to_union_of_differences(range1: Interval<Int>, range2: Interval<Int>) {
+                use crate::OneOrPair;
+
+                let diff1 = range1.difference(range2).unwrap_or_else(|_| Interval::Empty.into());
+                let diff2 = range2.difference(range1).unwrap_or_else(|_| Interval::Empty.into());
+
+                let un_diff = match (diff1, diff2) {
+                    (OneOrPair::One(a), OneOrPair::One(b)) => a.union(b),
+                    (OneOrPair::One(e), pair @ OneOrPair::Pair(_)) | (pair @ OneOrPair::Pair(_), OneOrPair::One(e)) => {
+                        prop_assert!(e.is_empty());
+                        pair
+                    }
+                    (OneOrPair::Pair(_), OneOrPair::Pair(_)) => {
+                        panic!("Both differences are pairs");
+                    }
+                };
+
+                let symm_diff = range1.symmetric_difference(range2).unwrap_or_else(|_| Interval::Empty.into());
+                match symm_diff {
+                    single @ OneOrPair::One(x) => {
+                        prop_assert_eq!(single, un_diff);
+                        let un = range1.union(range2).into_single().unwrap();
+                        let inter = range1.intersect(range2).unwrap_or(Interval::Empty);
+                        let un_inter_diff = un.difference(inter).unwrap_or_else(|_| Interval::Empty.into());
+                        prop_assert_eq!(un_inter_diff, OneOrPair::One(x));
+                    }
+                    pair @ OneOrPair::Pair(_) => {
+                        prop_assert_eq!(pair, un_diff);
+                    }
+                }
+            }
+
+            #[test]
+            fn symmetric_difference_is_err_when_equals_and_non_empty(range1: Interval<Int>, range2: Interval<Int>) {
+                let diff1 = range1.symmetric_difference(range2);
+                let diff2 = range2.symmetric_difference(range1);
+
+                if range1 == range2 && !range1.is_empty() {
+                    prop_assert_eq!(diff1.unwrap_err(), range2);
+                    prop_assert_eq!(diff2.unwrap_err(), range1);
+                } else {
+                    prop_assert_eq!(diff1.is_ok(), diff2.is_ok());
+                }
             }
 
             #[test]

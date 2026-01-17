@@ -146,13 +146,13 @@ assert_eq!(i5to20_excl * iuni, iuni);
 use intrval::{interval, SetOps as _};
 
 let igt2 = interval!(> 2);
-let igte2 = interval!(>= 2);
+let igt_e2 = interval!(>= 2);
 let igt10 = interval!(> 10);
 
-assert!(igte2.is_super(&igt2));
-assert!(igt2.is_sub(&igte2));
-assert!(!igt2.is_super(&igte2));
-assert!(!igte2.is_sub(&igt2));
+assert!(igt_e2.is_super(&igt2));
+assert!(igt2.is_sub(&igt_e2));
+assert!(!igt2.is_super(&igt_e2));
+assert!(!igt_e2.is_sub(&igt2));
 assert!(igt2.is_super(&igt10));
 assert!(igt10.is_sub(&igt2));
 assert!(igt2.is_disjoint(&interval!(< 0)));
@@ -164,6 +164,23 @@ assert_eq!(igt2.complement().into_single().unwrap(), interval!(<= 2));
 assert_eq!(
     (!interval!([-2, 10])).into_pair().unwrap(),
     (interval!(< -2), igt10)
+);
+
+assert_eq!(
+    igt2.difference(igt10).unwrap().into_single().unwrap(),
+    interval!((2, =10)),
+);
+assert_eq!(
+    igt2.symmetric_difference(interval!(<= 5))
+        .unwrap()
+        .into_pair()
+        .unwrap(),
+    (interval!(<= 2), interval!(> 5)),
+);
+// `.symmetric_difference` is aliased with `^` (falling back to Interval::Empty)
+assert_eq!(
+    (interval!(<= 5) ^ interval!((0, 5))).into_pair().unwrap(),
+    (interval!(<= 0), interval!(== 5)),
 );
 
 assert_eq!(igt2.intersect(igt10).unwrap(), igt10);
