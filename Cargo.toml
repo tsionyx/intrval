@@ -66,8 +66,9 @@ absolute_paths_not_starting_with_crate = "warn"
 ambiguous_negative_literals = "warn"
 closure_returning_async_block = "warn"
 deprecated_in_future = "warn"
-deprecated_safe_2024 = { level = "warn", priority = -1 }
-# using new expr is Ok
+deprecated_safe_2024 = "warn"
+deref_into_dyn_supertrait = "warn"
+# do not warn about using old `expr` in macros
 edition_2024_expr_fragment_specifier = "allow"
 elided_lifetimes_in_paths = "warn"
 explicit_outlives_requirements = "warn"
@@ -79,6 +80,7 @@ impl_trait_redundant_captures = "warn"
 keyword_idents_2018 = "warn"
 keyword_idents_2024 = "warn"
 let_underscore_drop = "warn"
+linker_messages = "warn"
 lossy_provenance_casts = "warn"
 macro_use_extern_crate = "warn"
 meta_variable_misuse = "warn"
@@ -102,6 +104,8 @@ rust_2024_guarded_string_incompatible_syntax = "warn"
 rust_2024_incompatible_pat = "warn"
 rust_2024_prelude_collisions = "warn"
 single_use_lifetimes = "warn"
+supertrait_item_shadowing_definition = "warn"
+supertrait_item_shadowing_usage = "warn"
 tail_expr_drop_order = "warn"
 trivial_casts = "warn"
 trivial_numeric_casts = "warn"
@@ -127,11 +131,49 @@ unused_results = "warn"
 variant_size_differences = "warn"
 
 [lints.clippy]
+# https://doc.rust-lang.org/clippy/lints.html
+correctness = { level = "deny", priority = -1 }
+suspicious = { level = "deny", priority = -2 }
+complexity = { level = "warn", priority = -3 }
+perf = { level = "warn", priority = -3 }
+style ={ level = "warn", priority = -4 }
+pedantic = { level = "warn", priority = -4 }
+cargo = { level = "warn", priority = -5 }
+nursery = { level = "warn", priority = -5 }
+
+#
+# === INDIVIDUAL LINT OVERRIDES ===
+#
+# set "allow" or "deny" for individual lints globally here:
 mem_forget = "deny"
-nursery = { level = "warn", priority = -1 }
-pedantic = { level = "warn", priority = -1 }
-# suppress some pedantic warnings
-#must_use_candidate = "allow"
-#missing_panics_doc = "allow"
-#missing_errors_doc = "allow"
-#module_name_repetitions = "allow"
+#
+# The following are the "resriction" lints that are useful to warn about in most codebases.
+# To check for other "restriction" lints, see the "RESTRICTION LINTS" section below for instructions.
+#
+# It is better to allow `unwrap` in tests and examples before using the following lint:
+#unwrap_used = "warn"
+# - Place this in the root module of your crate to allow `unwrap` in tests:
+#   `#![cfg_attr(test, allow(clippy::unwrap_used))]`;
+#   Better way is to set `allow-unwrap-in-tests = true` in _clippy.toml_ file;
+# - In the standalone tests and examples, the usual `#![allow(clippy::unwrap_used)]` can be used.
+
+#
+# === RESTRICTION LINTS ===
+#
+# The "restriction" lints are very noisy, so we selectively "warn" some of them here.
+# To analyze the codebase against the highest level of scrutiny
+# (with all "restriction" lints enabled), uncomment the lines below:
+#
+#restriction = { level = "warn", priority = -6 }
+#blanket_clippy_restriction_lints = "allow"
+#
+# Then use the following commd to generate the list of allowed lints:
+#   $ cargo clippy --all-features --workspace --all-targets 2>&1 |\
+#     grep -oP 'to override `-W clippy::restriction` add `#\[allow\(clippy::\K([^\)]+)' |\
+#     sort | uniq | xargs -I{} echo '{} = "allow"' | xclip -sel clip
+#
+# Paste the output below to selectively allow some of the "restriction" lints.
+#
+# Then you can comment each line one by one to see the effect of enabling the lint.
+# This way you can gradually increase the level of scrutiny of your codebase
+# by pinning some of the lints with "warn" level in the overrides section above.

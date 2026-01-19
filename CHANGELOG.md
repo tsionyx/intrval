@@ -58,6 +58,8 @@ _2026-01-16_
   - empty `Interval::Empty` with `interval!(0)`;
   - universe `Interval::Full` with `interval!(U)`;
 
+- set-up more lints by carefully exploring the latest rustc and clippy lint groups;
+
 ## Added
 
 - `Interval::as_ref_bounds` as a synonym for `Interval::into_bounds(Interval::as_ref)`;

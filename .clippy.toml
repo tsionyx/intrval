@@ -1,5 +1,8 @@
 # Additional configuration options for `cargo clippy`.
 # https://doc.rust-lang.org/clippy/configuration.html
 
-# https://rust-lang.github.io/rust-clippy/master/index.html#doc_markdown
+# https://doc.rust-lang.org/clippy/lint_configuration.html#allow-unwrap-in-tests
+allow-unwrap-in-tests = true
+
+# https://doc.rust-lang.org/clippy/lint_configuration.html#doc-valid-idents
 doc-valid-idents = [".."]
