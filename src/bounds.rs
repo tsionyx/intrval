@@ -127,8 +127,8 @@ where
 
 /// Used to convert an interval-like value into its endpoints.
 ///
-/// TODO: consider matching with `core::ops::IntoBounds` when
-/// the `feature = "range_into_bounds"` gets stabilized.
+/// # Notes
+/// This is an extension of the (currently unstable) `core::ops::IntoBounds`.
 pub trait IntoBounds<T>: Sized {
     /// The error signalling conversion to [`Endpoint`]-s fails.
     type Error;

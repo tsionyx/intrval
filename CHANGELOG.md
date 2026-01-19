@@ -61,6 +61,12 @@ _2026-01-16_
 ## Added
 
 - `Interval::as_ref_bounds` as a synonym for `Interval::into_bounds(Interval::as_ref)`;
+- the internal `Container` trait to abstract away the `.contains` method using only `IntoBounds`;
+  - the `Interval::contains` just reuse the blanket implementation of it;
+
+## Removed
+
+- `impl RangeBounds<T> for Interval<T>`;
 
 
 # v0.1.0

@@ -1,8 +1,8 @@
 use core::{
     cmp::Ordering,
     ops::{
-        Add, BitAnd, BitOr, BitXor, Bound, Div, Mul, Neg, Not, Range, RangeBounds, RangeFrom,
-        RangeFull, RangeInclusive, RangeTo, RangeToInclusive, Sub,
+        Add, BitAnd, BitOr, BitXor, Bound, Div, Mul, Neg, Not, Range, RangeFrom, RangeFull,
+        RangeInclusive, RangeTo, RangeToInclusive, Sub,
     },
 };
 
@@ -46,30 +46,6 @@ impl<T> From<RangeInclusive<T>> for Interval<T> {
 impl<T> From<RangeToInclusive<T>> for Interval<T> {
     fn from(RangeToInclusive { end }: RangeToInclusive<T>) -> Self {
         Self::LessThanOrEqual(end)
-    }
-}
-
-#[allow(clippy::match_same_arms)]
-impl<T> RangeBounds<T> for Interval<T>
-where
-    T: PartialOrd,
-{
-    fn start_bound(&self) -> Bound<&T> {
-        self.as_ref_bounds()
-            .map_or(Bound::Unbounded, |(a, _b)| a.into_bound())
-    }
-
-    fn end_bound(&self) -> Bound<&T> {
-        self.as_ref_bounds()
-            .map_or(Bound::Unbounded, |(_a, b)| b.into_bound())
-    }
-
-    fn contains<U>(&self, item: &U) -> bool
-    where
-        T: PartialOrd<U>,
-        U: ?Sized + PartialOrd<T>,
-    {
-        self.contains(item)
     }
 }
 
@@ -348,7 +324,7 @@ impl<T> Interval<T> {
             }
             Endpoint::Infinite => {
                 let zero_bound = || {
-                    if self.contains(&zero_point) {
+                    if crate::set::Container::contains(&self, &zero_point) {
                         Bound::Included(zero_result())
                     } else {
                         Bound::Excluded(zero_result())

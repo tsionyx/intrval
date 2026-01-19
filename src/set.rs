@@ -3,6 +3,43 @@ use crate::{
     helper::{minmax, OneOrPair, Pair},
 };
 
+/// The trait for types that can contain the items of type `T`.
+pub trait Container<T> {
+    /// Whether the `self` contains a given point comparable to `T`.
+    fn contains<U>(self, point: U) -> bool
+    where
+        T: PartialOrd + PartialOrd<U>,
+        U: PartialOrd<T>;
+}
+
+impl<Z, T> Container<T> for Z
+where
+    Self: IntoBounds<T>,
+{
+    fn contains<U>(self, point: U) -> bool
+    where
+        T: PartialOrd + PartialOrd<U>,
+        U: PartialOrd<T>,
+    {
+        use crate::bounds::Endpoint::{Excluded, Included, Infinite};
+
+        let Ok((a, b)) = self.into_bounds() else {
+            // an empty interval does not contain any point
+            return false;
+        };
+
+        (match a {
+            Included(start) => start <= point,
+            Excluded(start) => start < point,
+            Infinite => true,
+        }) && (match b {
+            Included(end) => point <= end,
+            Excluded(end) => point < end,
+            Infinite => true,
+        })
+    }
+}
+
 /// Provides a bunch of set operations for [`Bounded`] types.
 pub trait SetOps<T>: Bounded<T> {
     /// Get the set difference between `self` and `other`
@@ -262,8 +299,6 @@ pub trait SetOps<T>: Bounded<T> {
         let end = b.max(d);
         Self::from_bounds((start, end))
     }
-
-    // TODO: contains
 
     /// Returns `true` if there is a non-empty gap between `self` and `other`.
     /// This implies the `self.union(other)` guaranteed to be a [whole span][OneOrPair::One]

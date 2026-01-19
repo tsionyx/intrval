@@ -265,9 +265,6 @@ impl<T> Interval<T> {
     /// assert!(!interval!([5, 5]).is_empty());
     /// assert!(interval!([7, 5]).is_empty());
     /// ```
-    ///
-    /// TODO: consider moving into `RangeBounds::is_empty` when
-    /// the `feature = "range_bounds_is_empty"` gets stabilized.
     pub fn is_empty(&self) -> bool
     where
         T: PartialOrd,
@@ -286,22 +283,7 @@ impl<T> Interval<T> {
         T: PartialOrd + PartialOrd<U>,
         U: ?Sized + PartialOrd<T>,
     {
-        use Endpoint::{Excluded, Included, Infinite};
-
-        let Ok((a, b)) = self.as_ref_bounds() else {
-            // an empty interval does not contain any point
-            return false;
-        };
-
-        (match a {
-            Included(start) => start <= point,
-            Excluded(start) => start < point,
-            Infinite => true,
-        }) && (match b {
-            Included(end) => point <= end,
-            Excluded(end) => point < end,
-            Infinite => true,
-        })
+        crate::set::Container::contains(self, point)
     }
 
     /// Returns the length of the [`Interval`] if both bounds are finite.
