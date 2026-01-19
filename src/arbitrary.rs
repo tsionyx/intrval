@@ -1,8 +1,9 @@
+//! [`Arbitrary`] implementation for [`Interval`].
 extern crate alloc;
 
 #[allow(unused_imports)] // will be used internally by `prop_assert` macros
 use alloc::format;
-use core::ops;
+use core::{fmt::Debug, ops};
 
 use proptest::prelude::*;
 
@@ -48,7 +49,7 @@ impl<T> Interval<T> {
 
     fn arbitrary_with_bounds_strategy(input: BoxedStrategy<T>) -> impl Strategy<Value = Self>
     where
-        T: core::fmt::Debug + Clone + 'static,
+        T: Debug + Clone + 'static,
     {
         // simple `prop_oneof!` does not work here due to conditional compilation
         let s = prop::strategy::Union::new([
@@ -119,8 +120,8 @@ where
     type Parameters = Self; // the `Interval<T>` cannot be used because it is `!Default`
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(input_interval: Self::Parameters) -> Self::Strategy {
-        let interval_strategy = input_interval.0.get_strategy();
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        let interval_strategy = args.0.get_strategy();
         Interval::arbitrary_with_bounds_strategy(interval_strategy)
             .prop_map_into()
             .boxed()
@@ -146,7 +147,7 @@ mod prop_test {
     }
 
     fn mul_range() -> ops::RangeInclusive<Int> {
-        #[allow(trivial_numeric_casts)]
+        #[allow(trivial_numeric_casts, clippy::as_conversions)]
         (-11 as Int..=11)
     }
 
@@ -267,7 +268,7 @@ mod prop_test {
         }
 
         #[test]
-        fn contains_implies_clamp_preserving(range: Interval<Int>, x in params_range()) {
+        fn contains_implies_clamp_preserving(range in non_empty(), x in params_range()) {
             use core::cmp::Ordering;
             use crate::bounds::{Endpoint, RIGHT, LEFT};
 
@@ -282,7 +283,8 @@ mod prop_test {
             if range.contains(&x) {
                 let clamped = range.clamp(x);
                 prop_assert_eq!(clamped, Ok((Ordering::Equal, x)));
-            } else if let Ok((a, b)) = range.into_bounds() {
+            } else {
+                let (a, b) = range.into_bounds().unwrap();
                 let (ordering, clamped) = range.clamp(x).unwrap();
                 match ordering {
                     Ordering::Less => {

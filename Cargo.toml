@@ -150,8 +150,17 @@ mem_forget = "deny"
 # The following are the "resriction" lints that are useful to warn about in most codebases.
 # To check for other "restriction" lints, see the "RESTRICTION LINTS" section below for instructions.
 #
+absolute_paths = "warn"
+as_conversions = "warn"
+assertions_on_result_states = "warn"
+dbg_macro = "warn"
+else_if_without_else = "warn"
+missing_docs_in_private_items = "warn"
+return_and_then = "warn"
+renamed_function_params = "warn"
+semicolon_outside_block = "warn"
 # It is better to allow `unwrap` in tests and examples before using the following lint:
-#unwrap_used = "warn"
+unwrap_used = "warn"
 # - Place this in the root module of your crate to allow `unwrap` in tests:
 #   `#![cfg_attr(test, allow(clippy::unwrap_used))]`;
 #   Better way is to set `allow-unwrap-in-tests = true` in _clippy.toml_ file;

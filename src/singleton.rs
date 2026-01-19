@@ -1,6 +1,7 @@
 //! Module to suppport singleton sets.
 //! It depends on the `singleton` feature flag, therefore
-//! the implementation is separated.
+//! the implementation is encapsulated in the separate module
+//! to allow conditional compilation.
 
 #[cfg(feature = "singleton")]
 use crate::bounds::{BothBounds, Endpoint};

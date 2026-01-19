@@ -1,3 +1,4 @@
+//! Implementations of some [`core::ops`] for [`Interval`]-s.
 use core::{
     cmp::Ordering,
     ops::{
@@ -295,6 +296,8 @@ impl<T> Interval<T> {
         Z: Zero,
         Interval<Z>: IntoBounds<Z, Error = E>,
     {
+        use crate::set::Container;
+
         let zero_point = T::zero();
         let zero_result = || Z::zero();
 
@@ -324,7 +327,7 @@ impl<T> Interval<T> {
             }
             Endpoint::Infinite => {
                 let zero_bound = || {
-                    if crate::set::Container::contains(&self, &zero_point) {
+                    if Container::contains(&self, &zero_point) {
                         Bound::Included(zero_result())
                     } else {
                         Bound::Excluded(zero_result())
@@ -782,7 +785,9 @@ mod add_tests {
 
 #[cfg(test)]
 mod mul_tests {
-    use crate::interval;
+    use core::fmt::Debug;
+
+    use crate::{bounds::EmptyIntervalError, interval};
 
     use super::*;
 
@@ -821,12 +826,12 @@ mod mul_tests {
         assert_eq!(interval!(U: u8) * 0, interval!([0, 0]));
     }
 
-    fn cmp_mul_bound<T: PartialEq + core::fmt::Debug>(
-        bounds: Result<PrioritizedBounds<T>, crate::bounds::EmptyIntervalError<T>>,
+    fn cmp_mul_bound<T: PartialEq + Debug>(
+        bounds: Result<PrioritizedBounds<T>, EmptyIntervalError<T>>,
         result_interval: Interval<T>,
     ) where
         Interval<T>: IntoBounds<T>,
-        <Interval<T> as IntoBounds<T>>::Error: core::fmt::Debug,
+        <Interval<T> as IntoBounds<T>>::Error: Debug,
     {
         let (a, b) = bounds.unwrap();
         let pair = (a.into_data(), b.into_data());

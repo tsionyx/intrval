@@ -1,4 +1,5 @@
 //! The example below demonstrates the basic usage of the `intrval` crate.
+#![allow(clippy::unwrap_used)]
 
 use core::cmp::Ordering;
 
@@ -62,7 +63,7 @@ fn main() {
     #[allow(clippy::erasing_op)]
     {
         assert_eq!(interval!(U: i32) * 0, interval!([0, 0]));
-    }
+    };
 
     assert_eq!(interval!(> 2) + 3, interval!(> 5));
     assert_eq!(interval!(> 10) - 5, interval!(> 5));

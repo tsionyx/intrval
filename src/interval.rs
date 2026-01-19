@@ -1,4 +1,9 @@
-use core::{cmp::Ordering, hash::Hash};
+//! Module defining the [`Interval`] and its associated methods.
+use core::{
+    cmp::Ordering,
+    hash::{self, Hash},
+    ops::Sub,
+};
 
 use crate::{
     bounds::{Bounded, Endpoint},
@@ -101,7 +106,7 @@ impl<T: PartialOrd> PartialEq for Interval<T> {
 impl<T: PartialOrd> Eq for Interval<T> {}
 
 impl<T: PartialOrd + Hash> Hash for Interval<T> {
-    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
         if let Ok(bounds) = self.as_ref_bounds() {
             true.hash(state);
             bounds.hash(state);
@@ -283,7 +288,8 @@ impl<T> Interval<T> {
         T: PartialOrd + PartialOrd<U>,
         U: ?Sized + PartialOrd<T>,
     {
-        crate::set::Container::contains(self, point)
+        use crate::set::Container;
+        Container::contains(self, point)
     }
 
     /// Returns the length of the [`Interval`] if both bounds are finite.
@@ -307,9 +313,9 @@ impl<T> Interval<T> {
     /// assert_eq!(interval!((=0.0, =1.0)).len().into_diff().unwrap(), 1.0);
     /// assert!(interval!(U: i32).len().into_diff().is_none());
     /// ```
-    pub fn len(&self) -> Size<<T as core::ops::Sub>::Output>
+    pub fn len(&self) -> Size<<T as Sub>::Output>
     where
-        T: Clone + PartialOrd + core::ops::Sub,
+        T: Clone + PartialOrd + Sub,
     {
         let Ok((a, b)) = self.as_ref_bounds() else {
             return Size::Empty;

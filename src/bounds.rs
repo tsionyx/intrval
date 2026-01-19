@@ -1,3 +1,4 @@
+//! Module defining interval endpoints and related traits.
 use core::{
     cmp::Ordering,
     fmt,
@@ -8,7 +9,10 @@ pub use self::impls::EmptyIntervalError;
 
 // The lack of generic const expressions
 // forces to use `bool` instead of `enum Side {Left, Right}`
+
+/// The flag indicating the _left_ [`Endpoint`].
 pub const LEFT: bool = false;
+/// The flag indicating the _right_ [`Endpoint`].
 pub const RIGHT: bool = true;
 
 #[derive(Debug, Clone, Copy, Eq, Hash)]
@@ -22,8 +26,11 @@ pub enum Endpoint<const SIDE: bool, T> {
     Infinite,
 }
 
+/// Type alias for the _left_ [`Endpoint`].
 pub type LBound<T> = Endpoint<LEFT, T>;
+/// Type alias for the _right_ [`Endpoint`].
 pub type RBound<T> = Endpoint<RIGHT, T>;
+/// Type alias for the ordered pair of _left and _right_ [`Endpoint`]s.
 pub type BothBounds<T> = (LBound<T>, RBound<T>);
 
 impl<const SIDE: bool, T> Endpoint<SIDE, T> {
@@ -67,6 +74,8 @@ impl<const SIDE: bool, T> Endpoint<SIDE, T> {
         }
     }
 
+    /// Complete to a pair of bounds by adding
+    /// an [infinite bound][Endpoint::Infinite] on the opposite side.
     pub(crate) fn augment_with_inf(self) -> BothBounds<T> {
         #[allow(clippy::match_bool)]
         match SIDE {
@@ -147,6 +156,9 @@ pub trait Bounded<T>: IntoBounds<T> {
     fn from_bounds(bounds: BothBounds<T>) -> Self;
 }
 
+/// Get the [`Ordering`] representing
+/// comparison of infinity for the given side
+/// with any other finite value.
 pub const fn inf_ordering(side: bool) -> Ordering {
     #[allow(clippy::match_bool)]
     match side {
@@ -195,7 +207,8 @@ impl<const SIDE: bool, T> Endpoint<SIDE, T> {
         matches!(self.as_ext_point(), ExtPoint::Finite(_))
     }
 
-    pub(crate) const fn bound_val(&self) -> Option<&T> {
+    /// Get the underlying point of the endpoint, if finite.
+    pub const fn bound_val(&self) -> Option<&T> {
         match self.as_ext_point() {
             ExtPoint::Finite((val, _ordering)) => Some(val),
             ExtPoint::Infinite(_) => None,
@@ -220,7 +233,17 @@ impl<const SIDE: bool, T> Endpoint<SIDE, T> {
 /// The value of an endpoint related to a specific point
 /// (along with the direction of approaching to this point) or infinity.
 pub enum ExtPoint<T> {
+    /// The finite point along with the direction of approaching it.
+    /// - `Ordering::Equal` for a precise point;
+    /// - `Ordering::Less` for approaching the point from the left
+    ///   (i.e. excluded right endpoint, with the corresponding value of `x - epsilon`);
+    /// - `Ordering::Greater` for approaching the point from the right
+    ///   (i.e. excluded left endpoint, with the corresponding value of `x + epsilon`);
     Finite((T, Ordering)),
+
+    /// The infinite point:
+    /// - negative (for _false_);
+    /// - positive (for _true);
     Infinite(bool),
 }
 
@@ -255,6 +278,8 @@ impl<const SIDE: bool, T> PartialEq<T> for Endpoint<SIDE, T>
 where
     T: PartialEq + Clone,
 {
+    // https://github.com/rust-lang/rust-clippy/blob/master/CHANGELOG.md#rust-180
+    #[rustversion::attr(since(1.80), allow(clippy::renamed_function_params))]
     fn eq(&self, point: &T) -> bool {
         self.eq(&Self::Included(point.clone()))
     }
@@ -264,6 +289,8 @@ impl<const SIDE: bool, T> PartialOrd<T> for Endpoint<SIDE, T>
 where
     T: PartialOrd + Clone,
 {
+    // https://github.com/rust-lang/rust-clippy/blob/master/CHANGELOG.md#rust-180
+    #[rustversion::attr(since(1.80), allow(clippy::renamed_function_params))]
     fn partial_cmp(&self, point: &T) -> Option<Ordering> {
         self.partial_cmp(&Self::Included(point.clone()))
     }
@@ -369,6 +396,7 @@ mod impls {
 
     // https://blog.rust-lang.org/2024/09/05/Rust-1.81.0/#core-error-error
     #[rustversion::since(1.81)]
+    #[allow(clippy::absolute_paths)]
     impl<T: fmt::Debug + fmt::Display> core::error::Error for EmptyIntervalError<T> {}
 
     impl<T> IntoBounds<T> for Interval<T>
@@ -478,7 +506,7 @@ mod tests {
 
     #[test]
     fn into_bounds() {
-        assert!(interval!(0: i32).into_bounds().is_err());
+        let _err = interval!(0: i32).into_bounds().unwrap_err();
         assert_eq!(
             interval!(<5).into_bounds().unwrap(),
             (Infinite, Excluded(5))

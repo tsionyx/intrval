@@ -1,3 +1,5 @@
+//! Set operations for bounded types
+//! independent of the specific interval implementation.
 use crate::{
     bounds::{BothBounds, Bounded, IntoBounds},
     helper::{minmax, OneOrPair, Pair},

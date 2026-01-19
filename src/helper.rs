@@ -1,3 +1,4 @@
+//! Auxiliary types and functions.
 use core::cmp::Ordering;
 
 /// The trait to define scalar (single-dimension) types
@@ -23,9 +24,8 @@ where
     }
 
     fn cmp_zero(&self) -> Option<Ordering> {
-        Self::try_from(0)
-            .ok()
-            .and_then(|zero| self.partial_cmp(&zero))
+        let zero = Self::try_from(0).ok()?;
+        self.partial_cmp(&zero)
     }
 }
 
@@ -62,8 +62,10 @@ impl<T> Size<T> {
     }
 }
 
+/// Alias for the 2-tuple of the same type `T`.
 pub type Pair<T> = (T, T);
 
+/// Convert a [`Pair`] of type `T` into a [`Pair`] of type `U`.
 pub fn map_pair<T, U, F>((a, b): Pair<T>, mut f: F) -> Pair<U>
 where
     F: FnMut(T) -> U,
@@ -71,7 +73,9 @@ where
     (f(a), f(b))
 }
 
-// TODO: use `core::cmp::minmax` when stabilized.
+/// Reorder a pair of values into ascending order.
+///
+/// TODO: use `core::cmp::minmax` when stabilized.
 pub fn minmax<T: Ord>(v1: T, v2: T) -> [T; 2] {
     if v2 < v1 {
         [v2, v1]
