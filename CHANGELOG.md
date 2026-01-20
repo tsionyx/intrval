@@ -1,16 +1,78 @@
 This is a list of all notable changes.
 
-# Unreleased
+# v0.1.1
 
-_2026-01-16_
+_2026-01-20_
 
 ## Fixed
 
-- bump MSRV to _**1.68**_:
+- bump MSRV to _**1.69**_:
   - [namespaced features](https://blog.rust-lang.org/2022/04/07/Rust-1.60.0/#new-syntax-for-cargo-features)
     in _Cargo.toml_ (_**1.60**_);
   - [_sparse_ protocol](https://blog.rust-lang.org/2023/03/09/Rust-1.68.0/#cargo-s-sparse-protocol)
     for the index of crate dependencies (_**1.68**_);
+  - the _clippy_'s setting
+    [missing-docs-in-crate-items](https://github.com/rust-lang/rust-clippy/blob/master/CHANGELOG.md#rust-169)
+    for the [missing_docs_in_private_items](https://rust-lang.github.io/rust-clippy/master/index.html#missing_docs_in_private_items)
+    lint (_**1.69**_);
+
+- `impl<T: PartialOrd> PartialEq for Interval<T>` to allow to compare
+  different representations without `reduce`-ing:
+  - all _degenerate_ (empty) intervals are equal to each other;
+  - the `Singleton(x)` equals to `Closed((x, x))`;
+
+## Changed
+
+- split the `Bounded` trait into hierarchy of traits:
+  - `IntoBounds` to define only conversion to a pair of `Endpoint`-s;
+    - this reduction allows to implement it for `&Interval<T>`,
+      improving ergonomic (skipping some `.as_ref()` calls);
+  - `Bounded<T>`:
+    - adds the `.from_bounds()`
+    - removes the requirement `type Error: Into<Self>`;
+  - `SetOps<T>` to define operations:
+    - `.difference(self, other: impl IntoBounds)` to ignore the intersection;
+    - `.symmetric_difference(self, other: impl IntoBounds)`
+      to only take values from one of the spans;
+    - `.intersect(self, other: impl IntoBounds)`
+      (return type changed: `Result<Self, (Self, R)>` -> `Result<Self, R>`);
+    - `.union(self, other: impl IntoBounds)`
+      (return type changed: `Result<OneOrPair<Self>, (Self, R)>` -> `OneOrPair<Self>`)
+    - `.enclosure(self, other: impl IntoBounds)`
+      (return type changed: `Result<Self, (Self, R)>` -> `Self`);
+    - `.is_disjoint(&self, other: impl IntoBounds<&T>)`
+      to check whether the two `Interval`-s are separated
+      and could not be merged into a single one;
+    - `.is_sub(&self, other: impl IntoBounds<&T>)` (reverse to `is_super`);
+    - `.is_super(&self, other: impl IntoBounds<&T>)`
+      (previously named `Interval::contains_other`);
+
+- `Interval::point_cmp` to answer whether a point `T`
+  lies to the right/left of the `Interval<T>`.
+  The signature of the method matches the `PartialOrd::<T>::partial_cmp`,
+  but implementing the latter would result in poor ergonomics
+  in other parts of codebase.
+
+- improve the `Partial{Eq,Ord}` for `Endpoint` by enabling arbitrary `SIDE`-s to be comparable.
+  This became possible thanks to use of `ExtPoint` representing
+  a (possibly infinite) point with its
+  [neighbourhood](https://en.wikipedia.org/wiki/Neighbourhood_(mathematics)#Neighbourhood_of_a_point).
+
+- change the `interval!` macro syntax to create:
+  - empty `Interval::Empty` with `interval!(0)`;
+  - universe `Interval::Full` with `interval!(U)`;
+
+- set-up more lints by carefully exploring the latest rustc and clippy lint groups;
+
+## Added
+
+- `Interval::as_ref_bounds` as a synonym for `Interval::into_bounds(Interval::as_ref)`;
+- the internal `Container` trait to abstract away the `.contains` method using only `IntoBounds`;
+  - the `Interval::contains` just reuse the blanket implementation of it;
+
+## Removed
+
+- `impl RangeBounds<T> for Interval<T>`;
 
 
 # v0.1.0

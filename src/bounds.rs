@@ -1,15 +1,21 @@
+//! Module defining interval endpoints and related traits.
 use core::{
     cmp::Ordering,
     fmt,
     ops::{Add, Bound, Neg, Not, Sub},
 };
 
-use crate::{helper::Pair, singleton::SingletonBounds, Interval, OneOrPair};
+pub use self::impls::EmptyIntervalError;
 
+// The lack of generic const expressions
+// forces to use `bool` instead of `enum Side {Left, Right}`
+
+/// The flag indicating the _left_ [`Endpoint`].
 pub const LEFT: bool = false;
+/// The flag indicating the _right_ [`Endpoint`].
 pub const RIGHT: bool = true;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, Eq, Hash)]
 /// The bound of an interval.
 pub enum Endpoint<const SIDE: bool, T> {
     /// The point is included in the interval.
@@ -20,8 +26,11 @@ pub enum Endpoint<const SIDE: bool, T> {
     Infinite,
 }
 
+/// Type alias for the _left_ [`Endpoint`].
 pub type LBound<T> = Endpoint<LEFT, T>;
+/// Type alias for the _right_ [`Endpoint`].
 pub type RBound<T> = Endpoint<RIGHT, T>;
+/// Type alias for the ordered pair of _left and _right_ [`Endpoint`]s.
 pub type BothBounds<T> = (LBound<T>, RBound<T>);
 
 impl<const SIDE: bool, T> Endpoint<SIDE, T> {
@@ -65,6 +74,8 @@ impl<const SIDE: bool, T> Endpoint<SIDE, T> {
         }
     }
 
+    /// Complete to a pair of bounds by adding
+    /// an [infinite bound][Endpoint::Infinite] on the opposite side.
     pub(crate) fn augment_with_inf(self) -> BothBounds<T> {
         #[allow(clippy::match_bool)]
         match SIDE {
@@ -123,240 +134,54 @@ where
     }
 }
 
-/// Convert the two [`Bounded`] values into a pair of `BothBounds`,
-/// returning the original pair of values
-/// if at least one [conversion][Bounded::into_bounds] fails.
-fn pair_into_bounds<B1, B2, T>(a: B1, b: B2) -> Result<Pair<BothBounds<T>>, (B1, B2)>
-where
-    B1: Bounded<T>,
-    B2: Bounded<T>,
-{
-    let a_bounds = match a.into_bounds() {
-        Ok(bounds) => bounds,
-        Err(err) => return Err((err.into(), b)),
-    };
-    let b_bounds = match b.into_bounds() {
-        Ok(bounds) => bounds,
-        Err(err) => return Err((B1::from_bounds(a_bounds), err.into())),
-    };
-
-    Ok((a_bounds, b_bounds))
-}
-
-/// Used to convert a value into start and end endpoints, consuming the value.
+/// Used to convert an interval-like value into its endpoints.
 ///
-/// TODO: consider matching with `cope::ops::IntoBounds` when
-/// the `feature = "range_into_bounds"` gets stabilized.
-pub trait Bounded<T>: Sized {
+/// # Notes
+/// This is an extension of the (currently unstable) `core::ops::IntoBounds`.
+pub trait IntoBounds<T>: Sized {
     /// The error signalling conversion to [`Endpoint`]-s fails.
-    type Error: Into<Self>;
+    type Error;
 
-    /// Create from the given pair of [`Bound`]-s.
-    fn from_bounds(bounds: BothBounds<T>) -> Self;
-
-    /// Convert this range into the start and end bounds.
+    /// Convert this value into the left and right bounds, consuming the value.
     ///
     /// # Errors
     /// Return [`Self::Error`] if the conversion fails.
     fn into_bounds(self) -> Result<BothBounds<T>, Self::Error>;
-
-    /// Compute the intersection of `self` and `other`.
-    ///
-    /// # Errors
-    /// Return a pair of original values if at least one of [`Self::into_bounds`] fails.
-    fn intersect<R>(self, other: R) -> Result<Self, (Self, R)>
-    where
-        T: Ord,
-        R: Bounded<T>,
-    {
-        let ((self_start, self_end), (other_start, other_end)) = pair_into_bounds(self, other)?;
-
-        let start = self_start.max(other_start);
-        let end = self_end.min(other_end);
-
-        Ok(Self::from_bounds((start, end)))
-    }
-
-    /// The smallest span containing both `self` and `other`
-    /// if the values [intersects][Self::intersect] (wrapped in [`OneOrPair::One`]).
-    ///
-    /// Otherwise (when the intervals are disjoint),
-    /// return a [pair][OneOrPair::Pair] of pairs of ordered ranges
-    ///
-    /// # Errors
-    /// Return a pair of original values if at least one of [`Self::into_bounds`] fails.
-    fn union<R>(self, other: R) -> Result<OneOrPair<Self>, (Self, R)>
-    where
-        T: Ord,
-        R: Bounded<T>,
-    {
-        // TODO: use `core::cmp::minmax` when stabilized.
-        fn minmax<T: Ord>(v1: T, v2: T) -> [T; 2] {
-            if v2 < v1 {
-                [v2, v1]
-            } else {
-                [v1, v2]
-            }
-        }
-
-        let ((self_start, self_end), (other_start, other_end)) = pair_into_bounds(self, other)?;
-
-        let [min_start, max_start] = minmax(self_start, other_start);
-        let [min_end, max_end] = minmax(self_end, other_end);
-
-        let are_disjoint = {
-            let intersection = Interval::from_bounds((max_start.as_ref(), min_end.as_ref()));
-            let gap = intersection.reverse();
-
-            intersection.is_empty()
-                && (
-                    // `[x, x)` or `(x, x]` is an empty gap for empty intersection => intervals are joint
-                    !gap.is_empty() ||
-                    // `(x, x)` is an empty gap for empty intersection `(x, x)` => intervals are disjoint
-                    intersection == gap
-                )
-        };
-
-        let one_or_pair = if are_disjoint {
-            OneOrPair::Pair((
-                Self::from_bounds((min_start, min_end)),
-                Self::from_bounds((max_start, max_end)),
-            ))
-        } else {
-            OneOrPair::One(Self::from_bounds((min_start, max_end)))
-        };
-        Ok(one_or_pair)
-    }
-
-    /// The smallest span containing both `self` and `other`.
-    ///
-    /// # Errors
-    /// Return a pair of original values if at least one of [`Self::into_bounds`] fails.
-    fn enclosure<R>(self, other: R) -> Result<Self, (Self, R)>
-    where
-        T: Ord,
-        R: Bounded<T>,
-    {
-        let ((self_start, self_end), (other_start, other_end)) = pair_into_bounds(self, other)?;
-
-        let start = self_start.min(other_start);
-        let end = self_end.max(other_end);
-        Ok(Self::from_bounds((start, end)))
-    }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-/// The operation error indicating that the interval is empty.
-pub struct EmptyIntervalError<T>(Interval<T>);
-
-impl<T: fmt::Display> fmt::Display for EmptyIntervalError<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "the interval is empty: ")?;
-        self.0.fmt(f)
-    }
+/// Extend the [`IntoBounds`] trait to allow creating
+/// a value from a pair of [`Endpoint`]-s.
+pub trait Bounded<T>: IntoBounds<T> {
+    /// Create from the given pair of [`Endpoint`]-s.
+    fn from_bounds(bounds: BothBounds<T>) -> Self;
 }
 
-impl<T> From<EmptyIntervalError<T>> for Interval<T> {
-    fn from(err: EmptyIntervalError<T>) -> Self {
-        err.0
-    }
-}
-
-// https://blog.rust-lang.org/2024/09/05/Rust-1.81.0/#core-error-error
-#[rustversion::since(1.81)]
-impl<T: fmt::Debug + fmt::Display> core::error::Error for EmptyIntervalError<T> {}
-
-impl<T> Bounded<T> for Interval<T>
-where
-    T: PartialOrd,
-    Self: SingletonBounds<T>,
-{
-    type Error = EmptyIntervalError<T>;
-
-    fn from_bounds(bounds: BothBounds<T>) -> Self {
-        use Endpoint::{Excluded, Included, Infinite};
-
-        match bounds {
-            (Infinite, Infinite) => Self::Full,
-            (Infinite, Included(b)) => Self::LessThanOrEqual(b),
-            (Infinite, Excluded(b)) => Self::LessThan(b),
-            (Included(a), Infinite) => Self::GreaterThanOrEqual(a),
-            (Excluded(a), Infinite) => Self::GreaterThan(a),
-            (Included(a), Included(b)) => Self::Closed((a, b)),
-            (Included(a), Excluded(b)) => Self::RightOpen((a, b)),
-            (Excluded(a), Included(b)) => Self::LeftOpen((a, b)),
-            (Excluded(a), Excluded(b)) => Self::Open((a, b)),
-        }
-    }
-
-    fn into_bounds(self) -> Result<BothBounds<T>, Self::Error> {
-        use Endpoint::{Excluded, Included, Infinite};
-
-        let bounds = match self {
-            Self::Empty => return Err(EmptyIntervalError(self)),
-            Self::LessThan(b) => (Infinite, Excluded(b)),
-            Self::LessThanOrEqual(b) => (Infinite, Included(b)),
-            #[cfg(feature = "singleton")]
-            Self::Singleton(x) => <Self as SingletonBounds<T>>::value_into_bounds(x),
-            Self::GreaterThanOrEqual(a) => (Included(a), Infinite),
-            Self::GreaterThan(a) => (Excluded(a), Infinite),
-            Self::Open((ref a, ref b)) if a >= b => {
-                return Err(EmptyIntervalError(self));
-            }
-            Self::Open((a, b)) => (Excluded(a), Excluded(b)),
-            Self::LeftOpen((ref a, ref b)) if a >= b => {
-                return Err(EmptyIntervalError(self));
-            }
-            Self::LeftOpen((a, b)) => (Excluded(a), Included(b)),
-            Self::RightOpen((ref a, ref b)) if a >= b => {
-                return Err(EmptyIntervalError(self));
-            }
-            Self::RightOpen((a, b)) => (Included(a), Excluded(b)),
-            Self::Closed((ref a, ref b)) if a > b => {
-                return Err(EmptyIntervalError(self));
-            }
-            Self::Closed((a, b)) => (Included(a), Included(b)),
-            Self::Full => (Infinite, Infinite),
-        };
-        Ok(bounds)
-    }
-}
-
-impl<T> From<BothBounds<T>> for Interval<T>
-where
-    Self: Bounded<T>,
-{
-    fn from(bounds: BothBounds<T>) -> Self {
-        Self::from_bounds(bounds)
+/// Get the [`Ordering`] representing
+/// comparison of infinity for the given side
+/// with any other finite value.
+pub const fn inf_ordering(side: bool) -> Ordering {
+    #[allow(clippy::match_bool)]
+    match side {
+        LEFT => Ordering::Less,
+        RIGHT => Ordering::Greater,
     }
 }
 
 impl<const SIDE: bool, T> Endpoint<SIDE, T> {
-    /// Represent the result of operation `Infinite.cmp(Bounded)`,
-    /// i.e. the comparison of infinity with the finite number.
-    ///
-    /// E.g.:
-    /// - for the `LEFT` side: `Infinite == -inf < x == Bounded`;
-    /// - for the `RIGHT` side: `Infinite == +inf > x == Bounded`;
-    ///
-    /// This is also the result of operation of comparing `Included` with `Excluded` bounds with the same underlying value:
-    /// - for the `LEFT` side: `Included(x) < Excluded(x) ~= Included(x + epsilon)`;
-    /// - for the `RIGHT` side: `Included(x) > Excluded(x) ~= Included(x - epsilon)`;
-    pub(crate) const fn to_inf_ordering() -> Ordering {
-        #[allow(clippy::match_bool)]
-        match SIDE {
-            // `(a, ...)` can also be represented as `[a + epsilon, ...)`
-            // which leads to `[a, ...) < [a + epsilon, ...)`,
-            // so `Included(a) < Included(a + epsilon) ~= Excluded(a)`
-            LEFT => Ordering::Less,
-            // `(..., b)` can also be represented as `(..., b - epsilon]`
-            // which leads to `(..., b] > (..., b - epsilon]`
-            // so `Included(b) > Included(b - epsilon) ~= Excluded(b)`
-            RIGHT => Ordering::Greater,
+    /// Represent the direction of approaching to the endpoint as an [`Ordering`]:
+    /// - `Ordering::Greater` for left endpoints (i.e. approaching from the right):
+    ///   `(a, ...)` can also be represented as `[a + epsilon, ...)`
+    /// - `Ordering::Less` for right endpoints (i.e. approaching from the left):
+    ///   `(..., b)` can also be represented as `(..., b - epsilon]`.
+    const fn value_approaching(&self) -> Ordering {
+        match self {
+            Self::Included(_) => Ordering::Equal,
+            Self::Excluded(_) | Self::Infinite => inf_ordering(SIDE).reverse(),
         }
     }
 
-    pub(crate) const fn as_ref(&self) -> Endpoint<SIDE, &T> {
+    /// Get an `Endpoint` with referenced point value.
+    pub const fn as_ref(&self) -> Endpoint<SIDE, &T> {
         match self {
             Self::Included(v) => Endpoint::Included(v),
             Self::Excluded(v) => Endpoint::Excluded(v),
@@ -377,30 +202,75 @@ impl<const SIDE: bool, T> Endpoint<SIDE, T> {
         }
     }
 
-    pub(crate) const fn bound_val(&self) -> Option<&T> {
+    /// Whether the endpoint is finite.
+    pub const fn is_finite(&self) -> bool {
+        matches!(self.as_ext_point(), ExtPoint::Finite(_))
+    }
+
+    /// Get the underlying point of the endpoint, if finite.
+    pub const fn bound_val(&self) -> Option<&T> {
+        match self.as_ext_point() {
+            ExtPoint::Finite((val, _ordering)) => Some(val),
+            ExtPoint::Infinite(_) => None,
+        }
+    }
+
+    /// Get the underlying value and the direction of the endpoint.
+    /// The direction is represented as an [`Ordering`]:
+    /// - `Ordering::Equal` for included endpoints (either left or right);
+    /// - `Ordering::Less` for excluded right endpoints (i.e. approaching from the left);
+    /// - `Ordering::Greater` for excluded left endpoints (i.e. approaching from the right).
+    pub(crate) const fn as_ext_point(&self) -> ExtPoint<&T> {
+        let ordering = self.value_approaching();
         match self {
-            Self::Included(v) | Self::Excluded(v) => Some(v),
-            Self::Infinite => None,
+            Self::Included(v) | Self::Excluded(v) => ExtPoint::Finite((v, ordering)),
+            Self::Infinite => ExtPoint::Infinite(SIDE),
         }
     }
 }
 
-impl<const SIDE: bool, T: PartialOrd> PartialOrd for Endpoint<SIDE, T> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// The value of an endpoint related to a specific point
+/// (along with the direction of approaching to this point) or infinity.
+pub enum ExtPoint<T> {
+    /// The finite point along with the direction of approaching it.
+    /// - `Ordering::Equal` for a precise point;
+    /// - `Ordering::Less` for approaching the point from the left
+    ///   (i.e. excluded right endpoint, with the corresponding value of `x - epsilon`);
+    /// - `Ordering::Greater` for approaching the point from the right
+    ///   (i.e. excluded left endpoint, with the corresponding value of `x + epsilon`);
+    Finite((T, Ordering)),
+
+    /// The infinite point:
+    /// - negative (for _false_);
+    /// - positive (for _true);
+    Infinite(bool),
+}
+
+impl<T: PartialOrd> PartialOrd for ExtPoint<T> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        use Endpoint::{Excluded, Included, Infinite};
-
-        let to_inf_ordering = Self::to_inf_ordering();
-        let to_zero_ordering = to_inf_ordering.reverse();
-
         match (self, other) {
-            (Infinite, Infinite) => Some(Ordering::Equal),
-            (Infinite, _) => Some(to_inf_ordering),
-            (_, Infinite) => Some(to_zero_ordering),
-
-            (Included(a), Included(b)) | (Excluded(a), Excluded(b)) => a.partial_cmp(b),
-            (Included(i), Excluded(e)) => i.partial_cmp(e).map(|x| x.then(to_inf_ordering)),
-            (Excluded(e), Included(i)) => e.partial_cmp(i).map(|x| x.then(to_zero_ordering)),
+            (Self::Infinite(side_a), Self::Infinite(side_b)) => Some(side_a.cmp(side_b)),
+            (Self::Infinite(side), Self::Finite(_)) => Some(inf_ordering(*side)),
+            (Self::Finite(_), Self::Infinite(side)) => Some(inf_ordering(!*side)),
+            (Self::Finite(a), Self::Finite(b)) => a.partial_cmp(b),
         }
+    }
+}
+
+impl<const SIDE_L: bool, const SIDE_R: bool, T: PartialEq> PartialEq<Endpoint<SIDE_R, T>>
+    for Endpoint<SIDE_L, T>
+{
+    fn eq(&self, other: &Endpoint<SIDE_R, T>) -> bool {
+        self.as_ext_point() == other.as_ext_point()
+    }
+}
+
+impl<const SIDE_L: bool, const SIDE_R: bool, T: PartialOrd> PartialOrd<Endpoint<SIDE_R, T>>
+    for Endpoint<SIDE_L, T>
+{
+    fn partial_cmp(&self, other: &Endpoint<SIDE_R, T>) -> Option<Ordering> {
+        self.as_ext_point().partial_cmp(&other.as_ext_point())
     }
 }
 
@@ -408,6 +278,8 @@ impl<const SIDE: bool, T> PartialEq<T> for Endpoint<SIDE, T>
 where
     T: PartialEq + Clone,
 {
+    // https://github.com/rust-lang/rust-clippy/blob/master/CHANGELOG.md#rust-180
+    #[rustversion::attr(since(1.80), allow(clippy::renamed_function_params))]
     fn eq(&self, point: &T) -> bool {
         self.eq(&Self::Included(point.clone()))
     }
@@ -417,6 +289,8 @@ impl<const SIDE: bool, T> PartialOrd<T> for Endpoint<SIDE, T>
 where
     T: PartialOrd + Clone,
 {
+    // https://github.com/rust-lang/rust-clippy/blob/master/CHANGELOG.md#rust-180
+    #[rustversion::attr(since(1.80), allow(clippy::renamed_function_params))]
     fn partial_cmp(&self, point: &T) -> Option<Ordering> {
         self.partial_cmp(&Self::Included(point.clone()))
     }
@@ -496,6 +370,133 @@ where
     }
 }
 
+mod impls {
+    use core::fmt;
+
+    use crate::{bounds::Endpoint, singleton::SingletonBounds, Interval};
+
+    use super::{BothBounds, Bounded, IntoBounds};
+
+    #[derive(Debug, Clone, Copy)]
+    /// The operation error indicating that the interval is empty.
+    pub struct EmptyIntervalError<T>(Interval<T>);
+
+    impl<T: fmt::Display> fmt::Display for EmptyIntervalError<T> {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "the interval is empty: ")?;
+            self.0.fmt(f)
+        }
+    }
+
+    impl<T> From<EmptyIntervalError<T>> for Interval<T> {
+        fn from(err: EmptyIntervalError<T>) -> Self {
+            err.0
+        }
+    }
+
+    // https://blog.rust-lang.org/2024/09/05/Rust-1.81.0/#core-error-error
+    #[rustversion::since(1.81)]
+    #[allow(clippy::absolute_paths)]
+    impl<T: fmt::Debug + fmt::Display> core::error::Error for EmptyIntervalError<T> {}
+
+    impl<T> IntoBounds<T> for Interval<T>
+    where
+        T: PartialOrd,
+        Self: SingletonBounds<T>,
+    {
+        type Error = EmptyIntervalError<T>;
+
+        fn into_bounds(self) -> Result<BothBounds<T>, Self::Error> {
+            use Endpoint::{Excluded, Included, Infinite};
+
+            let bounds = match self {
+                Self::Empty => return Err(EmptyIntervalError(self)),
+                Self::LessThan(b) => (Infinite, Excluded(b)),
+                Self::LessThanOrEqual(b) => (Infinite, Included(b)),
+                #[cfg(feature = "singleton")]
+                Self::Singleton(x) => <Self as SingletonBounds<T>>::value_into_bounds(x),
+                Self::GreaterThanOrEqual(a) => (Included(a), Infinite),
+                Self::GreaterThan(a) => (Excluded(a), Infinite),
+                Self::Open((ref a, ref b)) if a >= b => {
+                    return Err(EmptyIntervalError(self));
+                }
+                Self::Open((a, b)) => (Excluded(a), Excluded(b)),
+                Self::LeftOpen((ref a, ref b)) if a >= b => {
+                    return Err(EmptyIntervalError(self));
+                }
+                Self::LeftOpen((a, b)) => (Excluded(a), Included(b)),
+                Self::RightOpen((ref a, ref b)) if a >= b => {
+                    return Err(EmptyIntervalError(self));
+                }
+                Self::RightOpen((a, b)) => (Included(a), Excluded(b)),
+                Self::Closed((ref a, ref b)) if a > b => {
+                    return Err(EmptyIntervalError(self));
+                }
+                Self::Closed((a, b)) => (Included(a), Included(b)),
+                Self::Full => (Infinite, Infinite),
+            };
+            Ok(bounds)
+        }
+    }
+
+    impl<T> Bounded<T> for Interval<T>
+    where
+        T: PartialOrd,
+        Self: SingletonBounds<T>,
+    {
+        fn from_bounds(bounds: BothBounds<T>) -> Self {
+            use Endpoint::{Excluded, Included, Infinite};
+
+            match bounds {
+                (Infinite, Infinite) => Self::Full,
+                (Infinite, Included(b)) => Self::LessThanOrEqual(b),
+                (Infinite, Excluded(b)) => Self::LessThan(b),
+                (Included(a), Infinite) => Self::GreaterThanOrEqual(a),
+                (Excluded(a), Infinite) => Self::GreaterThan(a),
+                (Included(a), Included(b)) => Self::Closed((a, b)),
+                (Included(a), Excluded(b)) => Self::RightOpen((a, b)),
+                (Excluded(a), Included(b)) => Self::LeftOpen((a, b)),
+                (Excluded(a), Excluded(b)) => Self::Open((a, b)),
+            }
+        }
+    }
+
+    impl<'a, T> IntoBounds<&'a T> for &'a Interval<T>
+    where
+        T: PartialOrd,
+    {
+        type Error = EmptyIntervalError<&'a T>;
+
+        fn into_bounds(self) -> Result<BothBounds<&'a T>, Self::Error> {
+            self.as_ref_bounds()
+        }
+    }
+
+    impl<T> Interval<T> {
+        /// Get referenced interval's bounds.
+        ///
+        /// # Errors
+        /// [`EmptyIntervalError`] wrapping a reference to itself when the interval is empty.
+        pub fn as_ref_bounds(
+            &self,
+        ) -> Result<BothBounds<&T>, <Interval<&T> as IntoBounds<&T>>::Error>
+        where
+            for<'a> Interval<&'a T>: IntoBounds<&'a T>,
+        {
+            self.as_ref().into_bounds()
+        }
+    }
+
+    impl<T> From<BothBounds<T>> for Interval<T>
+    where
+        Self: Bounded<T>,
+    {
+        fn from(bounds: BothBounds<T>) -> Self {
+            Self::from_bounds(bounds)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::interval;
@@ -505,7 +506,7 @@ mod tests {
 
     #[test]
     fn into_bounds() {
-        assert!(interval!(_: i32).into_bounds().is_err());
+        let _err = interval!(0: i32).into_bounds().unwrap_err();
         assert_eq!(
             interval!(<5).into_bounds().unwrap(),
             (Infinite, Excluded(5))
@@ -539,112 +540,8 @@ mod tests {
             (Included(3), Included(7))
         );
         assert_eq!(
-            interval!(..: i32).into_bounds().unwrap(),
+            interval!(U: i32).into_bounds().unwrap(),
             (Infinite, Infinite)
-        );
-    }
-
-    #[test]
-    fn intersect() {
-        let a = interval!([3, 7]);
-        let b = interval!((5, 10));
-        assert_eq!(a.intersect(b).unwrap(), interval!((5, =7)));
-
-        let a = interval!(<5);
-        let b = interval!(>3);
-        assert_eq!(a & b, interval!((3, 5)));
-
-        let a = interval!(<=5);
-        let b = interval!(>=-3);
-        assert_eq!(a & b, interval!([-3, 5]));
-
-        let a = interval!(..: i32);
-        let b = interval!(_: i32);
-        assert!(matches!(
-            a.intersect(b).unwrap_err(),
-            (interval!(..), interval!(_))
-        ));
-    }
-
-    #[test]
-    fn intersect_empty() {
-        let a = interval!([1, 2]);
-        let b = interval!([3, 4]);
-        assert_eq!(a.intersect(b).unwrap(), interval!([3, 2]));
-        assert!((a & b).reduce().is_empty());
-
-        let a = interval!(>6);
-        let b = interval!(<3);
-        assert_eq!(a.intersect(b).unwrap(), interval!((6, 3)));
-        assert!((a & b).reduce().is_empty());
-
-        let a = interval!(>=6);
-        let b = interval!(<6);
-        assert_eq!(a.intersect(b).unwrap(), interval!((=6, 6)));
-        assert!((a & b).reduce().is_empty());
-
-        let a = interval!((2, =4));
-        let b = interval!((=3, 1));
-        assert_eq!(a.intersect(b).unwrap_err(), (a, b));
-    }
-
-    #[test]
-    fn intersect_single() {
-        let a = interval!(>=6);
-        let b = interval!(<=6);
-        assert_eq!(a.intersect(b).unwrap(), interval!([6, 6]));
-        assert_eq!((a & b).reduce(), interval!(=6));
-
-        let a = interval!((2, =3));
-        let b = interval!((=3, 8));
-        assert_eq!(a.intersect(b).unwrap(), interval!([3, 3]));
-        assert_eq!((a & b).reduce(), interval!(==3));
-    }
-
-    #[test]
-    fn enclosure() {
-        let a = interval!([3, 7]);
-        let b = interval!((5, 10));
-        assert_eq!(a.enclosure(b).unwrap(), interval!((=3, 10)));
-
-        let a = interval!(<5);
-        let b = interval!(>3);
-        assert_eq!(a.enclosure(b).unwrap(), Interval::Full);
-
-        let a = interval!(<=-100);
-        let b = interval!(>=100);
-        assert_eq!(a.enclosure(b).unwrap(), Interval::Full);
-
-        let a = interval!([1, 2]);
-        let b = interval!([3, 4]);
-        assert_eq!(a.enclosure(b).unwrap(), interval!([1, 4]));
-    }
-
-    #[test]
-    fn union_touching() {
-        let a = interval!([1, 2]);
-        let b = interval!([2, 4]);
-        assert_eq!(
-            a.union(b).unwrap().into_single().unwrap(),
-            interval!([1, 4])
-        );
-
-        let a = interval!((1, 2));
-        let b = interval!([2, 4]);
-        assert_eq!((a | b).into_single().unwrap(), interval!((1, =4)));
-
-        let a = interval!([1, 2]);
-        let b = interval!((2, 4));
-        assert_eq!(
-            a.union(b).unwrap().into_single().unwrap(),
-            interval!((=1, 4))
-        );
-
-        let a = interval!((1, 2));
-        let b = interval!((2, 4));
-        assert_eq!(
-            (a | b).into_pair().unwrap(),
-            (interval!((1, 2)), interval!((2, 4)))
         );
     }
 
@@ -736,5 +633,29 @@ mod tests {
         assert!(right(Included(5)) > right(Excluded(5)));
         // '<100' < '<=100'
         assert!(right(Excluded(100)) < right(Included(100)));
+    }
+
+    #[test]
+    fn cmp_left_and_right_inf() {
+        use Bound::{Excluded, Included, Unbounded};
+        assert!(left(Unbounded) < right(Unbounded));
+        assert!(left(Unbounded) < right(Included(i32::MIN)));
+        assert!(left(Unbounded) < right(Excluded(i32::MIN)));
+
+        assert!(right(Unbounded) > left(Unbounded));
+        assert!(right(Unbounded) > left(Included(i32::MAX)));
+        assert!(right(Unbounded) > left(Excluded(i32::MAX)));
+    }
+
+    #[test]
+    fn cmp_left_and_right_finite() {
+        use Bound::{Excluded, Included};
+        assert!(left(Included(-100)) < right(Included(100)));
+        assert!(left(Included(-100)) < right(Included(0)));
+
+        assert!(left(Included(100)) == right(Included(100)));
+        assert!(left(Included(100)) > right(Excluded(100)));
+        assert!(left(Excluded(100)) > right(Included(100)));
+        assert!(left(Excluded(100)) > right(Excluded(100)));
     }
 }

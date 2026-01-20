@@ -1,14 +1,16 @@
+//! Implementations of some [`core::ops`] for [`Interval`]-s.
 use core::{
     cmp::Ordering,
     ops::{
-        Add, BitAnd, BitOr, Bound, Div, Mul, Neg, Not, Range, RangeBounds, RangeFrom, RangeFull,
+        Add, BitAnd, BitOr, BitXor, Bound, Div, Mul, Neg, Not, Range, RangeFrom, RangeFull,
         RangeInclusive, RangeTo, RangeToInclusive, Sub,
     },
 };
 
 use crate::{
-    bounds::{Bounded, Endpoint, LBound, RBound, LEFT, RIGHT},
+    bounds::{inf_ordering, Bounded, Endpoint, IntoBounds, LBound, RBound, LEFT, RIGHT},
     helper::map_pair,
+    set::SetOps,
     Interval, OneOrPair, Zero,
 };
 
@@ -48,72 +50,6 @@ impl<T> From<RangeToInclusive<T>> for Interval<T> {
     }
 }
 
-#[allow(clippy::match_same_arms)]
-impl<T> RangeBounds<T> for Interval<T>
-where
-    T: PartialOrd,
-{
-    fn start_bound(&self) -> Bound<&T> {
-        self.as_ref()
-            .into_bounds()
-            .map_or(Bound::Unbounded, |(a, _b)| a.into_bound())
-    }
-
-    fn end_bound(&self) -> Bound<&T> {
-        self.as_ref()
-            .into_bounds()
-            .map_or(Bound::Unbounded, |(_a, b)| b.into_bound())
-    }
-
-    fn contains<U>(&self, item: &U) -> bool
-    where
-        T: PartialOrd<U>,
-        U: ?Sized + PartialOrd<T>,
-    {
-        self.contains(item)
-    }
-}
-
-impl<T: PartialOrd> Interval<T> {
-    /// Whether the given interval is completely contained
-    /// within this interval.
-    pub fn contains_other<R>(&self, other: R) -> bool
-    where
-        R: for<'a> Bounded<&'a T>,
-    {
-        let Ok((other_start, other_end)) = other.into_bounds() else {
-            // the empty interval is contained in any interval
-            return true;
-        };
-
-        let Ok((self_start, self_end)) = self.as_ref().into_bounds() else {
-            // no interval can be inside an empty interval
-            // (except the empty one, which is handled above)
-            return false;
-        };
-
-        self_start <= other_start && self_end >= other_end
-    }
-
-    /// Whether the given point lies completely
-    /// to the left/right of the interval,
-    /// or maybe completely matches it (in a singleton case).
-    fn point_cmp(&self, point: &T) -> Option<Ordering> {
-        use Ordering::{Equal, Greater, Less};
-
-        let Ok((start, end)) = self.as_ref().into_bounds() else {
-            return None;
-        };
-
-        match (start.partial_cmp(&point)?, end.partial_cmp(&point)?) {
-            (Less, Less | Equal) | (Equal, Less) => Some(Less),
-            (Equal, Equal) => Some(Equal),
-            (Equal, Greater) | (Greater, Equal | Greater) => Some(Greater),
-            (Less, Greater) | (Greater, Less) => None,
-        }
-    }
-}
-
 impl<T: Add<Output = T> + Clone> Add<T> for Interval<T> {
     type Output = Self;
 
@@ -126,8 +62,8 @@ impl<T, U, Z> Add<Interval<U>> for Interval<T>
 where
     T: Zero + Add<U, Output = Z>,
     U: Zero,
-    Self: Bounded<T>,
-    Interval<U>: Bounded<U>,
+    Self: IntoBounds<T>,
+    Interval<U>: IntoBounds<U>,
     Interval<Z>: Bounded<Z>,
 {
     type Output = Interval<Z>;
@@ -160,8 +96,8 @@ impl<T, U, Z> Sub<Interval<U>> for Interval<T>
 where
     T: Zero + Sub<U, Output = Z>,
     U: Zero,
-    Self: Bounded<T>,
-    Interval<U>: Bounded<U>,
+    Self: IntoBounds<T>,
+    Interval<U>: IntoBounds<U>,
     Interval<Z>: Bounded<Z>,
 {
     type Output = Interval<Z>;
@@ -263,9 +199,14 @@ enum Prioritized<T> {
 
 impl<const SIDE: bool, T: PartialOrd> PartialOrd for Prioritized<Endpoint<SIDE, T>> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        let to_inf_ordering = Endpoint::<SIDE, T>::to_inf_ordering();
+        let to_inf_ordering = inf_ordering(SIDE);
         let to_zero_ordering = to_inf_ordering.reverse();
 
+        // `Low` variant always here to 'shrink' the interval, i.e.
+        // - it is `Greater` than any `Normal` (except equivalent one) for `Endpoint<LEFT, T>`
+        //   (preferrable in `max`, _low_ priority in `min`);
+        // - it is `Less` than any `Normal` (except equivalent one) for `Endpoint<RIGHT, T>`
+        //   (preferrable in `min`, _low_ priority in `max`).
         let (a, b) = map_pair((self, other), |p| p.as_ref().into_data().bound_val());
         match (self, other) {
             (Self::Low(_), Self::Normal(_)) if a.is_some() && b.is_some() && a != b => {
@@ -296,17 +237,6 @@ impl<T> Prioritized<T> {
         }
     }
 
-    #[allow(dead_code)]
-    fn map<U, F>(self, mut f: F) -> Prioritized<U>
-    where
-        F: FnMut(T) -> U,
-    {
-        match self {
-            Self::Low(v) => Prioritized::Low(f(v)),
-            Self::Normal(v) => Prioritized::Normal(f(v)),
-        }
-    }
-
     const fn as_ref(&self) -> Prioritized<&T> {
         match self {
             Self::Low(v) => Prioritized::Low(v),
@@ -324,6 +254,37 @@ impl<T> From<T> for Prioritized<T> {
 type PrioritizedBounds<T> = (Prioritized<LBound<T>>, Prioritized<RBound<T>>);
 
 impl<T> Interval<T> {
+    /// Whether the given point lies completely
+    /// to the left/right of the interval,
+    /// or maybe completely matches it (in a singleton case).
+    ///
+    /// This should be an impl of `PartialOrd<T> for Interval<T>`,
+    /// but this would require an impl of `PartialEq<T> for Interval<T>`,
+    /// which does not make much sense.
+    ///
+    /// Even worse, multiple existing implementations of
+    /// `PartialEq` for `Interval<T>` breaks
+    /// the type inference system in expressions like
+    /// `interval < interval_like.into()`.
+    /// This lowers much of ergonomics of using compare operators.
+    pub fn point_cmp(&self, point: &T) -> Option<Ordering>
+    where
+        T: PartialOrd,
+    {
+        use Ordering::{Equal, Greater, Less};
+
+        let Ok((start, end)) = self.as_ref_bounds() else {
+            return None;
+        };
+
+        match (start.partial_cmp(&point)?, end.partial_cmp(&point)?) {
+            (Less, Less | Equal) | (Equal, Less) => Some(Less),
+            (Equal, Equal) => Some(Equal),
+            (Equal, Greater) | (Greater, Equal | Greater) => Some(Greater),
+            (Less, Greater) | (Greater, Less) => None,
+        }
+    }
+
     /// Auxiliary function to help with multiplying two [`Intervals`].
     fn mul_bound<const SIDE: bool, N, Z, E>(
         self,
@@ -333,15 +294,17 @@ impl<T> Interval<T> {
         Self: Mul<N, Output = Interval<Z>>,
         T: Zero + PartialOrd,
         Z: Zero,
-        Interval<Z>: Bounded<Z, Error = E>,
+        Interval<Z>: IntoBounds<Z, Error = E>,
     {
+        use crate::set::Container;
+
         let zero_point = T::zero();
         let zero_result = || Z::zero();
 
         let (a, b) = match rhs {
             Endpoint::Included(n) => (self * n).into_bounds()?,
             Endpoint::Excluded(n) => {
-                let preserve_zero = match self.as_ref().into_bounds() {
+                let preserve_zero = match self.as_ref_bounds() {
                     Ok((ref_a, ref_b)) => [ref_a.into_bound(), ref_b.into_bound()]
                         .contains(&Bound::Included(&zero_point)),
                     Err(_) => false,
@@ -364,7 +327,7 @@ impl<T> Interval<T> {
             }
             Endpoint::Infinite => {
                 let zero_bound = || {
-                    if self.contains(&zero_point) {
+                    if Container::contains(&self, &zero_point) {
                         Bound::Included(zero_result())
                     } else {
                         Bound::Excluded(zero_result())
@@ -477,9 +440,9 @@ where
 
 impl<T, U> BitAnd<U> for Interval<T>
 where
-    Self: Bounded<T>,
+    Self: SetOps<T> + From<<Self as IntoBounds<T>>::Error>,
     T: Ord,
-    U: Bounded<T>,
+    U: IntoBounds<T> + From<U::Error>,
 {
     type Output = Self;
 
@@ -490,16 +453,29 @@ where
 
 impl<T, U> BitOr<U> for Interval<T>
 where
-    Self: Bounded<T>,
+    Self: SetOps<T> + From<<Self as IntoBounds<T>>::Error>,
     T: Ord,
-    U: Bounded<T>,
+    U: IntoBounds<T> + From<U::Error>,
 {
     type Output = OneOrPair<Self>;
 
     fn bitor(self, rhs: U) -> Self::Output {
-        self.union(rhs).unwrap_or_else(|(left, right)| {
-            OneOrPair::One(right.into_bounds().map_or(left, Self::from_bounds))
-        })
+        self.union(rhs)
+    }
+}
+
+impl<T, U> BitXor<U> for Interval<T>
+where
+    Self: SetOps<T> + From<<Self as IntoBounds<T>>::Error>,
+    T: Ord,
+    U: IntoBounds<T> + From<U::Error>,
+    for<'a> &'a U: IntoBounds<&'a T>,
+{
+    type Output = OneOrPair<Self>;
+
+    fn bitxor(self, rhs: U) -> Self::Output {
+        self.symmetric_difference(rhs)
+            .unwrap_or_else(|_| OneOrPair::One(Self::Empty))
     }
 }
 
@@ -511,7 +487,7 @@ mod tests {
 
     #[test]
     fn empty() {
-        let i: Interval<f64> = interval!(_);
+        let i: Interval<f64> = interval!(0);
         assert!(!i.contains(&-100.0));
         assert!(!i.contains(&0.0));
         assert!(!i.contains(&100.0));
@@ -640,7 +616,7 @@ mod tests {
 
     #[test]
     fn full() {
-        let i: Interval<f64> = interval!(..);
+        let i: Interval<f64> = interval!(U);
         assert!(i.contains(&-100.0));
         assert!(i.contains(&0.0));
         assert!(i.contains(&4.999_999));
@@ -663,8 +639,8 @@ mod ops_tests {
 
     #[test]
     fn neg() {
-        let i = -interval!(_: i8);
-        assert_eq!(i, interval!(_));
+        let i = -interval!(0: i8);
+        assert_eq!(i, interval!(0));
 
         let i = -interval!(< 5.0);
         assert_eq!(i, interval!(> -5.0));
@@ -693,14 +669,14 @@ mod ops_tests {
         let i = -interval!([5.0, 7.0]);
         assert_eq!(i, interval!([-7.0, -5.0]));
 
-        let i = -interval!(..: f64);
-        assert_eq!(i, interval!(..));
+        let i = -interval!(U: f64);
+        assert_eq!(i, interval!(U));
     }
 
     #[test]
     fn not() {
-        let i = !interval!(_: i16);
-        assert_eq!(i, OneOrPair::One(interval!(..)));
+        let i = !interval!(0: i16);
+        assert_eq!(i, OneOrPair::One(interval!(U)));
 
         let i = !interval!(< 5.0);
         assert_eq!(i, OneOrPair::One(interval!(>= 5.0)));
@@ -729,8 +705,8 @@ mod ops_tests {
         let i = !interval!([5.0, 7.0]);
         assert_eq!(i, OneOrPair::Pair((interval!(< 5.0), interval!(> 7.0))));
 
-        let i = !interval!(..: f64);
-        assert_eq!(i, OneOrPair::One(interval!(_)));
+        let i = !interval!(U: f64);
+        assert_eq!(i, OneOrPair::One(interval!(0)));
     }
 }
 
@@ -762,7 +738,7 @@ mod add_tests {
         assert_eq!(a + b, interval!(> 10));
 
         let c = interval!(< 6);
-        assert_eq!(a + c, interval!(..));
+        assert_eq!(a + c, interval!(U));
     }
 
     #[test]
@@ -793,7 +769,7 @@ mod add_tests {
     fn two_unbounded_diff() {
         let a = interval!(>= 2);
         let b = interval!(> 8);
-        assert_eq!(a - b, interval!(..));
+        assert_eq!(a - b, interval!(U));
 
         let c = interval!(< 6);
         assert_eq!(a - c, interval!(> -4));
@@ -809,17 +785,19 @@ mod add_tests {
 
 #[cfg(test)]
 mod mul_tests {
-    use crate::interval;
+    use core::fmt::Debug;
+
+    use crate::{bounds::EmptyIntervalError, interval};
 
     use super::*;
 
     #[test]
     fn mul_by_positive_scalar() {
-        assert_eq!(interval!(_: u8) * 100, interval!(_));
+        assert_eq!(interval!(0: u8) * 100, interval!(0));
         assert_eq!(interval!(< -2) * 5, interval!(< -10));
         assert_eq!(interval!((2, 3)) * 2, interval!((4, 6)));
         assert_eq!(interval!([5.0, 11.0]) * 3.5, interval!([17.5, 38.5]));
-        assert_eq!(interval!(..: u8) * 100, interval!(..));
+        assert_eq!(interval!(U: u8) * 100, interval!(U));
     }
 
     #[test]
@@ -831,29 +809,29 @@ mod mul_tests {
 
     #[test]
     fn mul_by_negative_scalar() {
-        assert_eq!(interval!(_: i8) * -100, interval!(_));
+        assert_eq!(interval!(0: i8) * -100, interval!(0));
         assert_eq!(interval!(>= 13) * -2, interval!(<= -26));
         assert_eq!(interval!((-2, 3)) * -2, interval!((-6, 4)));
         assert_eq!(interval!([5.0, 11.0]) * -3.5, interval!([-38.5, -17.5]));
-        assert_eq!(interval!(..: i8) * -100, interval!(..));
+        assert_eq!(interval!(U: i8) * -100, interval!(U));
     }
 
     #[test]
     #[allow(clippy::erasing_op)]
     fn mul_by_zero() {
-        assert_eq!(interval!(_: u8) * 0, interval!(_));
+        assert_eq!(interval!(0: u8) * 0, interval!(0));
         assert_eq!(interval!(< -2) * 0, interval!([0, 0]));
         assert_eq!(interval!((2, 3)) * 0, interval!([0, 0]));
         assert_eq!(interval!([5.0, 11.0]) * 0.0, interval!([0.0, 0.0]));
-        assert_eq!(interval!(..: u8) * 0, interval!([0, 0]));
+        assert_eq!(interval!(U: u8) * 0, interval!([0, 0]));
     }
 
-    fn cmp_mul_bound<T: PartialEq + core::fmt::Debug>(
-        bounds: Result<PrioritizedBounds<T>, crate::bounds::EmptyIntervalError<T>>,
+    fn cmp_mul_bound<T: PartialEq + Debug>(
+        bounds: Result<PrioritizedBounds<T>, EmptyIntervalError<T>>,
         result_interval: Interval<T>,
     ) where
-        Interval<T>: Bounded<T>,
-        <Interval<T> as Bounded<T>>::Error: core::fmt::Debug,
+        Interval<T>: IntoBounds<T>,
+        <Interval<T> as IntoBounds<T>>::Error: Debug,
     {
         let (a, b) = bounds.unwrap();
         let pair = (a.into_data(), b.into_data());
@@ -862,7 +840,7 @@ mod mul_tests {
 
     #[test]
     fn mul_to_infinite_bound() {
-        let (neg_inf, pos_inf) = interval!(..: i32).into_bounds().unwrap();
+        let (neg_inf, pos_inf) = interval!(U: i32).into_bounds().unwrap();
 
         cmp_mul_bound(interval!(>= 0).mul_bound(pos_inf), interval!(>= 0));
         cmp_mul_bound(interval!(> 0).mul_bound(pos_inf), interval!(> 0));
@@ -870,7 +848,7 @@ mod mul_tests {
         cmp_mul_bound(interval!(<= 0).mul_bound(pos_inf), interval!(<= 0));
         cmp_mul_bound(interval!(< 0).mul_bound(pos_inf), interval!(< 0));
         cmp_mul_bound(interval!(<= -1).mul_bound(pos_inf), interval!(< 0));
-        cmp_mul_bound(interval!(<= 1).mul_bound(pos_inf), interval!(..));
+        cmp_mul_bound(interval!(<= 1).mul_bound(pos_inf), interval!(U));
 
         cmp_mul_bound(interval!(>= 0).mul_bound(neg_inf), interval!(<= 0));
         cmp_mul_bound(interval!(> 0).mul_bound(neg_inf), interval!(< 0));
@@ -878,7 +856,7 @@ mod mul_tests {
         cmp_mul_bound(interval!(<= 0).mul_bound(neg_inf), interval!(>= 0));
         cmp_mul_bound(interval!(< 0).mul_bound(neg_inf), interval!(> 0));
         cmp_mul_bound(interval!(<= -1).mul_bound(neg_inf), interval!(> 0));
-        cmp_mul_bound(interval!(<= 1).mul_bound(neg_inf), interval!(..));
+        cmp_mul_bound(interval!(<= 1).mul_bound(neg_inf), interval!(U));
     }
 
     #[test]
@@ -978,8 +956,8 @@ mod mul_tests {
         let r1 = interval!(> -1);
         let r2 = interval!(>= -1);
 
-        assert_eq!(r1 * r2, interval!(..));
-        assert_eq!(r2 * r1, interval!(..));
+        assert_eq!(r1 * r2, interval!(U));
+        assert_eq!(r2 * r1, interval!(U));
     }
 
     #[test]

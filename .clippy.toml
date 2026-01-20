@@ -1,5 +1,23 @@
 # Additional configuration options for `cargo clippy`.
 # https://doc.rust-lang.org/clippy/configuration.html
 
+# https://github.com/rust-lang/rust-clippy/blob/master/CHANGELOG.md#rust-169
+msrv = "1.69"
+
+# The test are allowed to use `dbg!`, `expect`, `panic!` and `unwrap`.
+#
+# https://doc.rust-lang.org/clippy/lint_configuration.html#allow-dbg-in-tests
+# https://doc.rust-lang.org/clippy/lint_configuration.html#allow-unwrap-in-tests
+allow-dbg-in-tests = true
+allow-expect-in-tests = true
+# only introduced in 1.80
+#allow-panic-in-tests = true
+allow-unwrap-in-tests = true
+
+# https://doc.rust-lang.org/clippy/lint_configuration.html#missing-docs-in-crate-items
+# https://rust-lang.github.io/rust-clippy/master/index.html#renamed_function_params
+missing-docs-in-crate-items = true
+
+# https://doc.rust-lang.org/clippy/lint_configuration.html#doc-valid-idents
 # https://rust-lang.github.io/rust-clippy/master/index.html#doc_markdown
 doc-valid-idents = [".."]

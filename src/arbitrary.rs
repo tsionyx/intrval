@@ -1,8 +1,9 @@
+//! [`Arbitrary`] implementation for [`Interval`].
 extern crate alloc;
 
 #[allow(unused_imports)] // will be used internally by `prop_assert` macros
 use alloc::format;
-use core::ops;
+use core::{fmt::Debug, ops};
 
 use proptest::prelude::*;
 
@@ -48,7 +49,7 @@ impl<T> Interval<T> {
 
     fn arbitrary_with_bounds_strategy(input: BoxedStrategy<T>) -> impl Strategy<Value = Self>
     where
-        T: core::fmt::Debug + Clone + 'static,
+        T: Debug + Clone + 'static,
     {
         // simple `prop_oneof!` does not work here due to conditional compilation
         let s = prop::strategy::Union::new([
@@ -119,8 +120,8 @@ where
     type Parameters = Self; // the `Interval<T>` cannot be used because it is `!Default`
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(input_interval: Self::Parameters) -> Self::Strategy {
-        let interval_strategy = input_interval.0.get_strategy();
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        let interval_strategy = args.0.get_strategy();
         Interval::arbitrary_with_bounds_strategy(interval_strategy)
             .prop_map_into()
             .boxed()
@@ -130,8 +131,9 @@ where
 #[cfg(test)]
 mod prop_test {
     use crate::{
-        bounds::{Bounded as _, Endpoint::Infinite},
+        bounds::{Endpoint::Infinite, IntoBounds as _},
         interval,
+        set::SetOps as _,
     };
 
     use super::*;
@@ -145,7 +147,7 @@ mod prop_test {
     }
 
     fn mul_range() -> ops::RangeInclusive<Int> {
-        #[allow(trivial_numeric_casts)]
+        #[allow(trivial_numeric_casts, clippy::as_conversions)]
         (-11 as Int..=11)
     }
 
@@ -172,7 +174,7 @@ mod prop_test {
 
     fn one_or_zero_endpoints() -> impl Strategy<Value = Interval<Int>> {
         any::<Interval<Int>>().prop_filter("exclude both-bounded", |i| {
-            if let Ok((a, b)) = i.as_ref().into_bounds() {
+            if let Ok((a, b)) = i.as_ref_bounds() {
                 matches!(a, Infinite) || matches!(b, Infinite)
             } else {
                 true
@@ -182,7 +184,7 @@ mod prop_test {
 
     fn single_endpoint() -> impl Strategy<Value = Interval<Int>> {
         any::<Interval<Int>>().prop_filter("only take one side-unbounded", |i| {
-            if let Ok((a, b)) = i.as_ref().into_bounds() {
+            if let Ok((a, b)) = i.as_ref_bounds() {
                 matches!(a, Infinite) ^ matches!(b, Infinite)
             } else {
                 false
@@ -236,17 +238,17 @@ mod prop_test {
 
         #[test]
         fn empty_and_full_are_preserving_under_add(increment in params_range()) {
-            let empty = interval!(_: Int);
+            let empty = interval!(0: Int);
             prop_assert_eq!(empty + increment, empty);
 
-            let full = interval!(..: Int);
+            let full = interval!(U: Int);
             prop_assert_eq!(full + increment, full);
         }
 
         #[test]
         fn empty_is_reduced_and_not_clamped(range: Interval<Int>, x in params_range()) {
             let inv1 = range.is_empty();
-            let inv2 = range.reduce() == interval!(_);
+            let inv2 = range == interval!(0);
             let inv3 = range.clamp(x).is_err();
             let invariants = [inv1, inv2, inv3];
             prop_assert!(invariants.iter().all(|&b| b) || invariants.iter().all(|&b| !b));
@@ -266,9 +268,9 @@ mod prop_test {
         }
 
         #[test]
-        fn contains_implies_clamp_preserving(range: Interval<Int>, x in params_range()) {
+        fn contains_implies_clamp_preserving(range in non_empty(), x in params_range()) {
             use core::cmp::Ordering;
-            use crate::bounds::Endpoint;
+            use crate::bounds::{Endpoint, RIGHT, LEFT};
 
             fn bound_included<const SIDE: bool, T>(b: Endpoint<SIDE, T>) -> Option<T> {
                 if let Endpoint::Included(v) = b {
@@ -281,11 +283,12 @@ mod prop_test {
             if range.contains(&x) {
                 let clamped = range.clamp(x);
                 prop_assert_eq!(clamped, Ok((Ordering::Equal, x)));
-            } else if let Ok((a, b)) = range.into_bounds() {
+            } else {
+                let (a, b) = range.into_bounds().unwrap();
                 let (ordering, clamped) = range.clamp(x).unwrap();
                 match ordering {
                     Ordering::Less => {
-                        prop_assert_eq!(b, Endpoint::Excluded(clamped));
+                        prop_assert_eq!(b, Endpoint::<RIGHT, _>::Excluded(clamped));
                     }
                     Ordering::Equal => {
                         prop_assert_ne!(clamped, x);
@@ -298,7 +301,7 @@ mod prop_test {
                         );
                     }
                     Ordering::Greater => {
-                        prop_assert_eq!(a, Endpoint::Excluded(clamped));
+                        prop_assert_eq!(a, Endpoint::<LEFT, _>::Excluded(clamped));
                     }
                 }
             }
@@ -313,20 +316,20 @@ mod prop_test {
             #[test]
             // i + EMPTY == i
             fn adding_empty_interval_is_preserving(range in non_empty()) {
-                let sum = range + interval!(_: Int);
-                prop_assert_eq!(range.reduce(), sum.reduce());
+                let sum = range + interval!(0: Int);
+                prop_assert_eq!(range, sum);
 
                 let sum = range + interval!([0, -1]); // also empty
-                prop_assert_eq!(range.reduce(), sum.reduce());
+                prop_assert_eq!(range, sum);
 
                 let sum = interval!((2, =2)) + range; // also empty
-                prop_assert_eq!(range.reduce(), sum.reduce());
+                prop_assert_eq!(range, sum);
             }
 
             #[test]
             // i + FULL == FULL
             fn adding_full_interval_is_full(range: Interval<Int>) {
-                let sum = range + interval!(..: Int);
+                let sum = range + interval!(U: Int);
                 prop_assert_eq!(sum, Interval::Full);
             }
 
@@ -344,7 +347,7 @@ mod prop_test {
 
                 let scalar_sum = range + delta;
                 let sum = range + Interval::singleton(delta);
-                prop_assert_eq!(sum.reduce(), scalar_sum.reduce());
+                prop_assert_eq!(sum, scalar_sum);
             }
 
             #[test]
@@ -360,32 +363,32 @@ mod prop_test {
             #[test]
             // i - EMPTY == i
             fn sub_empty_interval_is_preserving(range in non_empty()) {
-                let diff = range - interval!(_: Int);
-                prop_assert_eq!(range.reduce(), diff.reduce());
+                let diff = range - interval!(0: Int);
+                prop_assert_eq!(range, diff);
 
                 let diff = range - interval!([0, -1]); // also empty
-                prop_assert_eq!(range.reduce(), diff.reduce());
+                prop_assert_eq!(range, diff);
             }
 
             #[test]
             fn sub_from_empty_is_neg(
                 range in BoundedInterval::arbitrary_with(negated_interval()).prop_map(|i| i.0),
             ) {
-                let diff = interval!(_: Int) - range;
-                prop_assert_eq!(range.reduce(), -diff.reduce());
+                let diff = interval!(0: Int) - range;
+                prop_assert_eq!(range, -diff);
 
                 let diff = interval!((2, =2)) - range; // also empty
-                prop_assert_eq!(range.reduce(), -diff.reduce());
+                prop_assert_eq!(range, -diff);
             }
 
             #[test]
             // i - FULL == FULL
             // FULL - i == FULL
             fn sub_full_interval_is_full(range: Interval<Int>) {
-                let diff = range - interval!(..: Int);
+                let diff = range - interval!(U: Int);
                 prop_assert_eq!(diff, Interval::Full);
 
-                let diff = interval!(..: Int) - range;
+                let diff = interval!(U: Int) - range;
                 prop_assert_eq!(diff, Interval::Full);
             }
 
@@ -403,7 +406,7 @@ mod prop_test {
 
                 let scalar_diff = range - delta;
                 let diff = range - Interval::singleton(delta);
-                prop_assert_eq!(diff.reduce(), scalar_diff.reduce());
+                prop_assert_eq!(diff, scalar_diff);
             }
 
             #[test]
@@ -445,10 +448,10 @@ mod prop_test {
 
             #[test]
             fn empty_and_full_are_preserving(factor in params_range()) {
-                let empty = interval!(_: Int);
+                let empty = interval!(0: Int);
                 prop_assert_eq!(empty * factor, empty);
 
-                let full = interval!(..: Int);
+                let full = interval!(U: Int);
                 if factor == 0 {
                     prop_assert_eq!(full * factor, interval!([0, 0]));
                 } else {
@@ -494,6 +497,8 @@ mod prop_test {
     mod bounds {
         use super::*;
 
+        use crate::bounds::Bounded as _;
+
         proptest! {
             #![proptest_config(ProptestConfig::with_cases(8000))]
 
@@ -506,7 +511,7 @@ mod prop_test {
                 // skip the singleton interval as it
                 // will be restored as a closed interval
                 if let Interval::Singleton(_) = range {
-                    prop_assert_eq!(range, restored.reduce());
+                    prop_assert_eq!(range, restored);
                     return Ok(());
                 }
 
@@ -552,42 +557,67 @@ mod prop_test {
             }
 
             #[test]
+            fn difference_on_err_returns_original(range1: Interval<Int>, range2: Interval<Int>) {
+                if let Err((a, b)) = range1.difference(range2) {
+                    prop_assert_eq!(a, range1);
+                    prop_assert_eq!(b, range2);
+                }
+            }
+
+            #[test]
             fn intersect_on_err_returns_original(range1: Interval<Int>, range2: Interval<Int>) {
-                if let Err((a, b)) = range1.intersect(range2) {
-                    prop_assert_eq!(a.reduce(), range1.reduce());
-                    prop_assert_eq!(b.reduce(), range2.reduce());
+                if let Err(fail) = range1.intersect(range2) {
+                    prop_assert_eq!(fail, range2);
                 }
             }
 
             #[test]
-            fn union_on_err_returns_original(range1: Interval<Int>, range2: Interval<Int>) {
-                if let Err((a, b)) = range1.union(range2) {
-                    prop_assert_eq!(a.reduce(), range1.reduce());
-                    prop_assert_eq!(b.reduce(), range2.reduce());
-                }
+            fn symmetric_difference_is_reflexive(range1: Interval<Int>, range2: Interval<Int>) {
+                let a = range1.symmetric_difference(range2).unwrap_or_else(crate::OneOrPair::One);
+                let b = range2.symmetric_difference(range1).unwrap_or_else(crate::OneOrPair::One);
+                prop_assert_eq!(a, b);
             }
 
             #[test]
-            fn enclosure_on_err_returns_original(range1: Interval<Int>, range2: Interval<Int>) {
-                if let Err((a, b)) = range1.enclosure(range2) {
-                    prop_assert_eq!(a.reduce(), range1.reduce());
-                    prop_assert_eq!(b.reduce(), range2.reduce());
-                }
+            fn intersect_is_reflexive(range1: Interval<Int>, range2: Interval<Int>) {
+                let a = range1.intersect(range2).unwrap_or_else(|err| err);
+                let b = range2.intersect(range1).unwrap_or_else(|err| err);
+                prop_assert_eq!(a, b);
+            }
+
+            #[test]
+            fn union_is_reflexive(range1: Interval<Int>, range2: Interval<Int>) {
+                let a = range1.union(range2);
+                let b = range2.union(range1);
+                prop_assert_eq!(a, b);
+            }
+
+            #[test]
+            fn enclosure_is_reflexive(range1: Interval<Int>, range2: Interval<Int>) {
+                let a = range1.enclosure(range2);
+                let b = range2.enclosure(range1);
+                prop_assert_eq!(a, b);
             }
 
             #[test]
             fn union_is_enclosure_when_intersects(range1: Interval<Int>, range2: Interval<Int>) {
                 use crate::OneOrPair;
 
-                let inter = range1 & range2;
-                let enclosed = range1.enclosure(range2).unwrap_or(Interval::Full);
+                let is_disjoint = range1.is_disjoint(&range2);
+                // check the `is_disjoint` is reflexive
+                prop_assert_eq!(is_disjoint, range2.is_disjoint(&range1));
 
-                match range1.union(range2).unwrap_or(OneOrPair::One(Interval::Full)) {
+                let inter = range1 & range2;
+                let enclosed = range1.enclosure(range2);
+
+                match range1.union(range2) {
                     OneOrPair::One(i) => {
-                        prop_assert!(!i.is_empty());
+                        prop_assert!(!is_disjoint);
+                        prop_assert!(!i.is_empty() || (range1.is_empty() && range2.is_empty()));
                         prop_assert_eq!(i, enclosed);
                     }
                     OneOrPair::Pair((a, b)) => {
+                        prop_assert!(is_disjoint);
                         prop_assert!(inter.is_empty());
                         let restored = Interval::from_bounds((
                             a.into_bounds().unwrap().0,
@@ -602,11 +632,10 @@ mod prop_test {
             fn complement_union_and_intersect(range in one_or_zero_endpoints()) {
                 let complement = (!range).into_single().unwrap();
 
-                assert!((range & complement).is_empty());
-                assert_eq!(range.union(complement)
-                        .unwrap_or_else(|_| Interval::Full.into())
-                        .into_single().unwrap(),
-                    Interval::Full
+                prop_assert!((range & complement).is_empty());
+                prop_assert_eq!(
+                    range.union(complement).into_single().unwrap(),
+                    Interval::Full,
                 );
             }
 
@@ -616,10 +645,10 @@ mod prop_test {
                 let complement = (!range).into_single().unwrap().into_closure();
 
                 let inter = range & complement;
-                assert!(!inter.is_empty());
-                assert_eq!(inter.len().into_diff().unwrap(), 0);
+                prop_assert!(!inter.is_empty());
+                prop_assert_eq!(inter.len().into_diff().unwrap(), 0);
 
-                assert_eq!(
+                prop_assert_eq!(
                     (range | complement).into_single().unwrap(),
                     Interval::Full
                 );
@@ -633,8 +662,194 @@ mod prop_test {
                 let complement = (!range).into_single().unwrap().into_interior();
 
                 let inter = range & complement;
-                assert!(inter.is_empty());
-                assert!(matches!(range | complement, OneOrPair::Pair(_)));
+                prop_assert!(inter.is_empty());
+                prop_assert!(matches!(range | complement, OneOrPair::Pair(_)));
+            }
+
+            #[test]
+            fn reflexive_set_operations(range: Interval<Int>) {
+                let diff = range.difference(range);
+                if range.is_empty() {
+                    prop_assert_eq!(diff.unwrap().into_single().unwrap(), range);
+                } else {
+                    prop_assert!(diff.is_err());
+                }
+                let diff = range.symmetric_difference(range);
+                if range.is_empty() {
+                    prop_assert_eq!(diff.unwrap().into_single().unwrap(), range);
+                } else {
+                    prop_assert_eq!(diff.unwrap_err(), range);
+                }
+                prop_assert_eq!(range & range, range);
+                prop_assert_eq!((range | range).into_single().unwrap(), range);
+                prop_assert_eq!(range.enclosure(range), range);
+                prop_assert!(range.is_super(&range));
+                prop_assert!(range.is_sub(&range));
+                prop_assert!(!range.is_disjoint(&range));
+            }
+
+            #[test]
+            fn difference_from_universe_is_complement(range: Interval<Int>) {
+                let diff = Interval::<Int>::Full.difference(range).unwrap_or_else(|(a, b)| {
+                    assert!(a.is_full());
+                    assert!(b.is_full());
+                    Interval::Empty.into()
+                });
+                prop_assert_eq!(diff, !range);
+            }
+
+            #[test]
+            fn difference_is_equivalent_intersect_with_complement(range1: Interval<Int>, range2: Interval<Int>) {
+                use crate::OneOrPair;
+                match !range2 {
+                    OneOrPair::One(not_range2) => {
+                        let inter = range1 & not_range2;
+                        let diff = range1.difference(range2).map_or(
+                            Interval::Empty, |diff| diff.into_single().unwrap());
+                        prop_assert!(diff.is_sub(&range1));
+                        prop_assert_eq!(diff, inter);
+                    }
+                    OneOrPair::Pair((a, b)) => {
+                        let inter1 = range1 & a;
+                        let inter2 = range1 & b;
+                        match range1.difference(range2).unwrap_or_else(|_| Interval::Empty.into()) {
+                            OneOrPair::One(x) => {
+                                prop_assert!(x.is_sub(&range1));
+
+                                if inter1.is_empty() {
+                                    prop_assert_eq!(x, inter2);
+                                } else if inter2.is_empty() {
+                                    prop_assert_eq!(x, inter1);
+                                } else {
+                                    panic!("Expected a pair difference, got a single interval: {x:?}");
+                                }
+                            }
+                            OneOrPair::Pair((diff1, diff2)) => {
+                                prop_assert!(diff1.is_sub(&range1));
+                                prop_assert!(diff2.is_sub(&range1));
+
+                                prop_assert!(range2.is_sub(&range1));
+                                prop_assert_eq!(diff1, inter1);
+                                prop_assert_eq!(diff2, inter2);
+                            }
+                        }
+                    }
+                }
+            }
+
+            #[test]
+            fn symmetric_difference_with_empty_is_preserving(range: Interval<Int>) {
+                let e = Interval::<Int>::Empty;
+
+                let diff = e.symmetric_difference(range);
+                prop_assert_eq!(diff.unwrap().into_single().unwrap(), range);
+
+                let diff = range.symmetric_difference(e);
+                prop_assert_eq!(diff.unwrap().into_single().unwrap(), range);
+            }
+
+            #[test]
+            fn symmetric_difference_with_universe_is_complement(range: Interval<Int>) {
+                let u = Interval::<Int>::Full;
+                let diff = u.symmetric_difference(range).unwrap_or_else(|r| {
+                    assert!(r.is_empty() || r.is_full());
+                    !r
+                });
+                prop_assert_eq!(diff, !range);
+            }
+
+            #[test]
+            fn symmetric_difference_is_equivalent_to_union_of_differences(range1: Interval<Int>, range2: Interval<Int>) {
+                use crate::OneOrPair;
+
+                let diff1 = range1.difference(range2).unwrap_or_else(|_| Interval::Empty.into());
+                let diff2 = range2.difference(range1).unwrap_or_else(|_| Interval::Empty.into());
+
+                let un_diff = match (diff1, diff2) {
+                    (OneOrPair::One(a), OneOrPair::One(b)) => a.union(b),
+                    (OneOrPair::One(e), pair @ OneOrPair::Pair(_)) | (pair @ OneOrPair::Pair(_), OneOrPair::One(e)) => {
+                        prop_assert!(e.is_empty());
+                        pair
+                    }
+                    (OneOrPair::Pair(_), OneOrPair::Pair(_)) => {
+                        panic!("Both differences are pairs");
+                    }
+                };
+
+                let symm_diff = range1.symmetric_difference(range2).unwrap_or_else(|_| Interval::Empty.into());
+                match symm_diff {
+                    single @ OneOrPair::One(x) => {
+                        prop_assert_eq!(single, un_diff);
+                        let un = range1.union(range2).into_single().unwrap();
+                        let inter = range1.intersect(range2).unwrap_or(Interval::Empty);
+                        let un_inter_diff = un.difference(inter).unwrap_or_else(|_| Interval::Empty.into());
+                        prop_assert_eq!(un_inter_diff, OneOrPair::One(x));
+                    }
+                    pair @ OneOrPair::Pair(_) => {
+                        prop_assert_eq!(pair, un_diff);
+                    }
+                }
+            }
+
+            #[test]
+            fn symmetric_difference_is_err_when_equals_and_non_empty(range1: Interval<Int>, range2: Interval<Int>) {
+                let diff1 = range1.symmetric_difference(range2);
+                let diff2 = range2.symmetric_difference(range1);
+
+                if range1 == range2 && !range1.is_empty() {
+                    prop_assert_eq!(diff1.unwrap_err(), range2);
+                    prop_assert_eq!(diff2.unwrap_err(), range1);
+                } else {
+                    prop_assert_eq!(diff1.is_ok(), diff2.is_ok());
+                }
+            }
+
+            #[test]
+            fn sub_super_union_intersects(range1: Interval<Int>, range2: Interval<Int>) {
+                let first_super = range1.is_super(&range2);
+                let first_sub = range1.is_sub(&range2);
+                let second_super = range2.is_super(&range1);
+                let second_sub = range2.is_sub(&range1);
+                let inter = range1 & range2;
+                let uni = range1 | range2;
+
+                if first_sub {
+                    prop_assert!(second_super);
+                }
+                if second_sub {
+                    prop_assert!(first_super);
+                }
+
+                match (first_super, second_super) {
+                    (true, true) => {
+                        prop_assert_eq!(range1, range2);
+                        prop_assert!(first_sub);
+                        prop_assert!(second_sub);
+                        prop_assert_eq!(inter, range1);
+                        prop_assert_eq!(uni.into_single().unwrap(), range1);
+                    }
+                    (true, false) => {
+                        prop_assert!(!first_sub);
+                        prop_assert!(second_sub);
+                        prop_assert_eq!(inter, range2);
+                        prop_assert_eq!(uni.into_single().unwrap(), range1);
+                    }
+                    (false, true) => {
+                        prop_assert!(first_sub);
+                        prop_assert!(!second_sub);
+                        prop_assert_eq!(inter, range1);
+                        prop_assert_eq!(uni.into_single().unwrap(), range2);
+                    }
+                    (false, false) => {
+                        prop_assert!(!first_sub);
+                        prop_assert!(!second_sub);
+
+                        prop_assert!(range1.is_super(&inter));
+                        prop_assert!(!range1.is_sub(&inter));
+                        prop_assert!(range2.is_super(&inter));
+                        prop_assert!(!range2.is_sub(&inter));
+                    }
+                }
             }
         }
     }

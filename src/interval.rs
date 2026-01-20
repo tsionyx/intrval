@@ -1,4 +1,9 @@
-use core::cmp::Ordering;
+//! Module defining the [`Interval`] and its associated methods.
+use core::{
+    cmp::Ordering,
+    hash::{self, Hash},
+    ops::Sub,
+};
 
 use crate::{
     bounds::{Bounded, Endpoint},
@@ -6,7 +11,7 @@ use crate::{
     singleton::SingletonBounds,
 };
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "SCREAMING_SNAKE_CASE"))]
 /// Represent the subset of domain values for some `T: PartialOrd`.
@@ -88,6 +93,29 @@ macro_rules! map_variants {
     };
 }
 
+impl<T: PartialOrd> PartialEq for Interval<T> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self.as_ref_bounds(), other.as_ref_bounds()) {
+            (Ok(l), Ok(r)) => l == r,
+            (Ok(_), Err(_)) | (Err(_), Ok(_)) => false,
+            (Err(_), Err(_)) => true,
+        }
+    }
+}
+
+impl<T: PartialOrd> Eq for Interval<T> {}
+
+impl<T: PartialOrd + Hash> Hash for Interval<T> {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        if let Ok(bounds) = self.as_ref_bounds() {
+            true.hash(state);
+            bounds.hash(state);
+        } else {
+            false.hash(state);
+        }
+    }
+}
+
 impl<T> Interval<T> {
     /// Apply a transformation to the borders of an [`Interval`],
     /// preserving its structure.
@@ -104,8 +132,8 @@ impl<T> Interval<T> {
     /// Get an [`Interval`] with referenced bound values.
     pub const fn as_ref(&self) -> Interval<&T> {
         map_variants!(self,
-            x => &x,
-            (a, b) => (&a, &b)
+            x => x,
+            (a, b) => (a, b)
         )
     }
 
@@ -242,14 +270,11 @@ impl<T> Interval<T> {
     /// assert!(!interval!([5, 5]).is_empty());
     /// assert!(interval!([7, 5]).is_empty());
     /// ```
-    ///
-    /// TODO: consider moving into `RangeBounds::is_empty` when
-    /// the `feature = "range_bounds_is_empty"` gets stabilized.
     pub fn is_empty(&self) -> bool
     where
         T: PartialOrd,
     {
-        self.as_ref().into_bounds().is_err()
+        self.as_ref_bounds().is_err()
     }
 
     /// Whether the [`Interval`] contains every possible value.
@@ -263,29 +288,15 @@ impl<T> Interval<T> {
         T: PartialOrd + PartialOrd<U>,
         U: ?Sized + PartialOrd<T>,
     {
-        use Endpoint::{Excluded, Included, Infinite};
-
-        let Ok((a, b)) = self.as_ref().into_bounds() else {
-            // an empty interval does not contain any point
-            return false;
-        };
-
-        (match a {
-            Included(start) => start <= point,
-            Excluded(start) => start < point,
-            Infinite => true,
-        }) && (match b {
-            Included(end) => point <= end,
-            Excluded(end) => point < end,
-            Infinite => true,
-        })
+        use crate::set::Container;
+        Container::contains(self, point)
     }
 
     /// Returns the length of the [`Interval`] if both bounds are finite.
     ///
     /// ```
     /// # use intrval::interval;
-    /// assert_eq!(interval!(_: u8).len().into_diff().unwrap(), 0);
+    /// assert_eq!(interval!(0: u8).len().into_diff().unwrap(), 0);
     /// assert!(interval!(< 5).len().into_diff().is_none());
     /// assert!(interval!(<= 3.2).len().into_diff().is_none());
     /// assert!(interval!(> -10).len().into_diff().is_none());
@@ -300,13 +311,13 @@ impl<T> Interval<T> {
     /// assert_eq!(interval!([0.0, 1.0]).len().into_diff().unwrap(), 1.0);
     /// assert_eq!(interval!([5.0, 1.0]).len().into_diff().unwrap(), 0.0);
     /// assert_eq!(interval!((=0.0, =1.0)).len().into_diff().unwrap(), 1.0);
-    /// assert!(interval!(..: i32).len().into_diff().is_none());
+    /// assert!(interval!(U: i32).len().into_diff().is_none());
     /// ```
-    pub fn len(&self) -> Size<<T as core::ops::Sub>::Output>
+    pub fn len(&self) -> Size<<T as Sub>::Output>
     where
-        T: Clone + PartialOrd + core::ops::Sub,
+        T: Clone + PartialOrd + Sub,
     {
-        let Ok((a, b)) = self.as_ref().into_bounds() else {
+        let Ok((a, b)) = self.as_ref_bounds() else {
             return Size::Empty;
         };
 
@@ -339,7 +350,7 @@ impl<T> Interval<T> {
     where
         T: Clone + PartialOrd,
     {
-        let Ok((a, b)) = self.as_ref().into_bounds() else {
+        let Ok((a, b)) = self.as_ref_bounds() else {
             return Err(x);
         };
 
@@ -365,8 +376,8 @@ impl<T> Interval<T> {
 /// ```
 /// # use intrval::{interval, Interval::{self, *}, Singleton as _};
 ///
-/// assert_eq!(interval!(_), Empty::<i32>);
-/// assert_eq!(interval!(_: u8), Empty);
+/// assert_eq!(interval!(0), Empty::<i32>);
+/// assert_eq!(interval!(0: u8), Empty);
 ///
 /// assert_eq!(interval!(< 5), LessThan(5));
 /// assert_eq!(interval!(<= 3.2), LessThanOrEqual(3.2));
@@ -381,12 +392,17 @@ impl<T> Interval<T> {
 /// assert_eq!(interval!([0.0, 1.0]), Closed((0.0, 1.0)));
 /// assert_eq!(interval!((=0.0, =1.0)), Closed((0.0, 1.0)));
 ///
-/// assert_eq!(interval!(..), Full::<f64>);
-/// assert_eq!(interval!(..: f32), Full);
+/// assert_eq!(interval!(U), Full::<f64>);
+/// assert_eq!(interval!(U: f32), Full);
 /// ```
 macro_rules! interval {
-    (_ $(:$t:ty)?) => {
-        $crate::Interval $(::<$t>)? ::Empty
+    ($ctor:tt: $t:ty) => {
+        // TODO: apply the `as $crate::Interval::<$t>`
+        //  when the https://github.com/rust-lang/rust/issues/151202 gets fixed
+        $crate::Interval::<$t>::from($crate::interval!($ctor))
+    };
+    (0) => {
+        $crate::Interval::Empty
     };
     (< $x:expr) => {
         $crate::Interval::LessThan($x)
@@ -400,10 +416,9 @@ macro_rules! interval {
     (>= $x:expr) => {
         $crate::Interval::GreaterThanOrEqual($x)
     };
-    (= $x:expr) => {{
-        use $crate::Singleton as _;
-        $crate::Interval::singleton($x)
-    }};
+    (= $x:expr) => {
+        $crate::interval!(== $x)
+    };
     (== $x:expr) => {{
         use $crate::Singleton as _;
         $crate::Interval::singleton($x)
@@ -414,10 +429,10 @@ macro_rules! interval {
 
     // unbalanced [ and ) are not supported in macros to avoid confusion
     ( ($a:expr , =$b:expr) ) => {
-       $crate::Interval::LeftOpen(($a, $b))
+        $crate::Interval::LeftOpen(($a, $b))
     };
     ( ( =$a:expr , $b:expr ) ) => {
-       $crate::Interval::RightOpen(($a, $b))
+        $crate::Interval::RightOpen(($a, $b))
     };
     ( ( =$a:expr , =$b:expr ) ) => {
         $crate::Interval::Closed(($a, $b))
@@ -426,7 +441,7 @@ macro_rules! interval {
     ( [ $a:expr , $b:expr ] ) => {
         $crate::Interval::Closed(($a, $b))
     };
-    (.. $(:$t:ty)? ) => {
-        $crate::Interval $(::<$t>)? ::Full
+    (U) => {
+        $crate::Interval::Full
     };
 }
