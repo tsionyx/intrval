@@ -6,11 +6,15 @@ _2026-01-16_
 
 ## Fixed
 
-- bump MSRV to _**1.68**_:
+- bump MSRV to _**1.69**_:
   - [namespaced features](https://blog.rust-lang.org/2022/04/07/Rust-1.60.0/#new-syntax-for-cargo-features)
     in _Cargo.toml_ (_**1.60**_);
   - [_sparse_ protocol](https://blog.rust-lang.org/2023/03/09/Rust-1.68.0/#cargo-s-sparse-protocol)
     for the index of crate dependencies (_**1.68**_);
+  - the _clippy_'s setting
+    [missing-docs-in-crate-items](https://github.com/rust-lang/rust-clippy/blob/master/CHANGELOG.md#rust-169)
+    for the [missing_docs_in_private_items](https://rust-lang.github.io/rust-clippy/master/index.html#missing_docs_in_private_items)
+    lint (_**1.69**_);
 
 - `impl<T: PartialOrd> PartialEq for Interval<T>` to allow to compare
   different representations without `reduce`-ing:

@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
 
 env:
-  RUST_VERSIONS_PULL_REQUEST: "['1.68.0','stable','beta']"
+  RUST_VERSIONS_PULL_REQUEST: "['1.69.0','stable','beta']"
   RUST_VERSIONS_RELEASE: "['stable']"
   APT_DEPENDENCIES: "[]"
 

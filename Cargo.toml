@@ -8,7 +8,7 @@ edition = "2021"
 keywords = ["interval", "bounds", "math", "no-std"]
 categories = ["science", "data-structures"]
 authors = []
-rust-version = "1.68"
+rust-version = "1.69"
 readme = "README.md"
 exclude = [
     ".gitignore",
