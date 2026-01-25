@@ -1,0 +1,266 @@
+use core::ops::{Add, Div, Mul, Sub};
+
+/// Helper trait combining the four basic arithmetic _linear_ operations:
+/// - addition / subtraction;
+/// - multiplying to scalar value;
+/// - dividing to get scalar (ratio) value.
+///
+/// <https://en.wikipedia.org/wiki/Linear_space>
+pub trait Linear:
+    Sized
+    + Add<Self, Output = Self>
+    + Sub<Self, Output = Self>
+    + Mul<Ratio<Self>, Output = Self>
+    + Div<Self>
+{
+}
+
+type Ratio<T> = <T as Div<T>>::Output;
+
+impl<T> Linear for T where
+    T: Add<Self, Output = Self>
+        + Sub<Self, Output = Self>
+        + Mul<Ratio<Self>, Output = Self>
+        + Div<Self>
+{
+}
+
+/// Extend a [self-divisible type][Div] with integer division.
+pub trait IntDiv: Div + Sized {
+    /// Ensure the ratio to be integer by rounding it (towards zero).
+    fn round_to_int(r: Ratio<Self>) -> Ratio<Self>;
+
+    /// Emulate integer division by rounding the ratio to integer (towards zero).
+    fn int_div(self, other: Self) -> Ratio<Self> {
+        Self::round_to_int(self / other)
+    }
+}
+
+mod impls {
+    use super::{IntDiv, Ratio};
+
+    /// Implement `IntDiv` for integer types by simply returning the ratio as is.
+    macro_rules! impl_int_div_for_int {
+        ($($int:ty),+ $(,)?) => {$(
+            impl IntDiv for $int {
+                fn round_to_int(r: Ratio<Self>) -> Ratio<Self> {
+                    r
+                }
+            }
+        )+};
+    }
+    impl_int_div_for_int!(i8, u8, i16, u16, i32, u32, i64, u64, usize, isize, i128, u128);
+
+    /// Implement `IntDiv` for floating-point types by truncating the ratio.
+    ///
+    /// # Note
+    ///
+    /// The `NaN` values will be treated as zero.
+    macro_rules! impl_int_div_for_float {
+        ($($f:ty => $int_ty:ty),+ $(,)?) => {$(
+            impl IntDiv for $f {
+                fn round_to_int(r: Ratio<Self>) -> Ratio<Self> {
+                    #![allow(
+                        trivial_numeric_casts,
+                        clippy::as_conversions,
+                        clippy::cast_possible_truncation,
+                        clippy::cast_precision_loss,
+                        clippy::cast_sign_loss,
+                    )]
+                    if r.is_nan() {
+                        0.0 as Ratio<Self>
+                    } else {
+                        // `f{32,64}.trunc()` is still unstable in `core` as of _Rust 1.93_
+                        // (https://github.com/rust-lang/rust/issues/137578),
+                        // so emulate it with casting to integer and back.
+                        // This way will clamp some values with extremely large
+                        // absolute value (including +/- infinity) into integer range as well.
+                        let sign = r.is_sign_positive();
+
+                        let truncated_abs = {
+                            let r_abs_finite = {
+                                // Make it a positive and clamp to integer range before casting.
+                                //
+                                // Note: the `{float}::abs()` was only stabilized in core in _Rust 1.84_
+                                // (https://github.com/rust-lang/rust/releases/tag/1.84.0)
+                                let r_abs = if sign {
+                                    r
+                                } else {
+                                    -r   // use unary negation instead of calling `abs()`
+                                };
+
+                                // return the clamped value when `|r|` is infinity
+                                if r_abs.is_infinite() {
+                                    Ratio::<Self>::MAX
+                                } else {
+                                    r_abs
+                                }
+                            };
+
+                            let max = <$int_ty>::MAX as Ratio<Self>;
+                            if r_abs_finite >= max {
+                                // return unchanged when `|r| >= 2^mantissa_bits`
+                                // (it has no fractional part in IEEE-754)
+                                r_abs_finite
+                            } else {
+                                // the cast to integer will truncate the fractional part,
+                                // and the cast back to float will restore the original integer value
+                                // (it should be within the range of the integer type in this branch)
+                                (r_abs_finite as $int_ty) as Ratio<Self>
+                            }
+                        };
+
+                        if sign {
+                            truncated_abs
+                        } else {
+                            -truncated_abs
+                        }
+                    }
+                }
+            }
+        )+};
+    }
+
+    impl_int_div_for_float!(f32 => i64, f64 => i128);
+
+    #[macro_export]
+    /// Helper macro to implement `IntDiv` for numeric types
+    /// which ratio could be (fallibly) converted to/from core numeric types that
+    /// already implement `IntDiv`.
+    ///
+    /// The following underlying primitive types are now supported
+    /// (and can be used on the right hand of `as` in the macro):
+    /// - integers: i8, u8, i16, u16, i32, u32, i64, u64, usize, isize, i128, u128
+    /// - floats: f32, f64
+    ///
+    /// # Note
+    /// The macro uses `unwrap_or_default()`, which means type conversion failures
+    /// will result in default values (typically zero) being used instead of propagating errors.
+    /// If you cannot rely on this behaviour, it is better to provide the manual implementation
+    /// of the `IntDiv` instead to cover the edge cases of the type conversions.
+    ///
+    /// # TODO
+    ///
+    /// consider using feature flags to implement for more numeric types,
+    /// like the ones listed in:
+    ///   - <https://crates.io/keywords/int>
+    ///   - <https://crates.io/keywords/decimal>
+    ///
+    /// The naive blanket impl approach `impl for T where T: Into<f64> + From<f64>`
+    /// does not work due to orphan rule.
+    macro_rules! impl_int_div {
+        ($num_ty:ty as $core_ty:ty) => {
+            impl $crate::discrete::IntDiv for $num_ty {
+                fn round_to_int(
+                    r: <Self as core::ops::Div>::Output,
+                ) -> <Self as core::ops::Div>::Output {
+                    let core_num_ratio = r.try_into().unwrap_or_default();
+                    let ratio_rounded = <$core_ty>::round_to_int(core_num_ratio);
+                    ratio_rounded.try_into().unwrap_or_default()
+                }
+            }
+        };
+    }
+
+    #[cfg(test)]
+    mod tests {
+        #![allow(
+            clippy::as_conversions,
+            clippy::cast_precision_loss,
+            clippy::excessive_precision,
+            // the rounded values have no fractional parts, so direct comparison is fine
+            clippy::float_cmp,
+            clippy::unreadable_literal,
+        )]
+
+        use super::*;
+
+        #[test]
+        fn f64_trunc() {
+            let inf_p = 1.0 / 0.0;
+            let inf_n = -1.0 / 0.0;
+            let nan_p = inf_p * 0.0;
+            let nan_n = inf_n * 0.0;
+
+            let inf_repr = f64::MAX;
+
+            let inputs = [
+                -84785459459999193493494549584.55,
+                -123.343435543559,
+                -0.0,
+                0.0,
+                8989898.44489348939775,
+                147326823945405434343.87878,
+                inf_p,
+                inf_n,
+                nan_p,
+                nan_n,
+            ];
+
+            let expected = [
+                -84785459459999193493494549584.0,
+                -123.0,
+                -0.0,
+                0.0,
+                8989898.0,
+                147326823945405434343.0,
+                inf_repr,
+                -inf_repr,
+                0.0,
+                0.0,
+            ];
+
+            for (&input, exp) in inputs.iter().zip(expected) {
+                let result = <f64 as IntDiv>::round_to_int(input);
+                assert!(
+                    (result == exp) || (result.is_nan() && exp.is_nan()),
+                    "f64::round_to_int({input}) = {result}, expected {exp}",
+                );
+            }
+        }
+
+        #[test]
+        fn f32_trunc() {
+            let inf_p = 1.0 / 0.0;
+            let inf_n = -1.0 / 0.0;
+            let nan_p = inf_p * 0.0;
+            let nan_n = inf_n * 0.0;
+
+            let inf_repr = f32::MAX;
+
+            let inputs = [
+                -84785459459999193493494549584.55,
+                -123.343435543559,
+                -0.0,
+                0.0,
+                8989898.44489348939775,
+                147326823945405434343.87878,
+                inf_p,
+                inf_n,
+                nan_p,
+                nan_n,
+            ];
+
+            let expected = [
+                -84785459459999193493494549584.0,
+                -123.0,
+                -0.0,
+                0.0,
+                8989898.0,
+                147326823945405434343.0,
+                inf_repr,
+                -inf_repr,
+                0.0,
+                0.0,
+            ];
+
+            for (&input, exp) in inputs.iter().zip(expected) {
+                let result = <f32 as IntDiv>::round_to_int(input);
+                assert!(
+                    (result == exp) || (result.is_nan() && exp.is_nan()),
+                    "f32::round_to_int({input}) = {result}, expected {exp}",
+                );
+            }
+        }
+    }
+}

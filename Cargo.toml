@@ -31,14 +31,21 @@ features = ["derive"]
 optional = true
 
 [dependencies.proptest]
-version = "< 1.8"  # to be supported by Rust 1.66+
+version = "~1.7"  # constrained to 1.7.x for MSRV compatibility
 default-features = false
 features = ["std"]
+optional = true
+
+[dependencies.rand]
+version = "~0.9.2"
+default-features = false
+features = ["thread_rng"]
 optional = true
 
 
 [dev-dependencies]
 serde_json = "1.0.140"
+ordered-float = { version = "5.0", default-features = false }
 
 
 [features]
@@ -48,7 +55,14 @@ default = []
 # By default is disabled and emulated with `Interval::Closed((x, x))`.
 singleton = []
 serde = ["dep:serde"]
-arbitrary = ["dep:proptest"]
+arbitrary = [
+    "dep:proptest",
+
+    # do not include this feature intentionally to avoid
+    # adding another `proptest` dependency with `default-features=true`
+    #"ordered-float/proptest"
+]
+random = ["dep:rand"]
 
 
 [lints.rust]

@@ -160,3 +160,43 @@ impl<T> From<Pair<T>> for OneOrPair<T> {
         Self::Pair(value)
     }
 }
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+/// Extend a type `T` by adding a notion of possible _infinity_ to it.
+pub enum ValOrInf<T> {
+    /// Just a value.
+    Val(T),
+    /// Infinite value.
+    Inf,
+}
+
+impl<T> ValOrInf<T> {
+    /// Get the reference to inner value,
+    /// where `None` denotes the [infinity][ValOrInf::Inf].
+    pub const fn get_val(&self) -> Option<&T> {
+        match self {
+            Self::Val(x) => Some(x),
+            Self::Inf => None,
+        }
+    }
+
+    /// Convert the [`ValOrInf`] into [`Option`]
+    /// where `None` denotes the [infinity][ValOrInf::Inf].
+    pub fn into_val(self) -> Option<T> {
+        match self {
+            Self::Val(x) => Some(x),
+            Self::Inf => None,
+        }
+    }
+
+    /// Is the value finite?
+    pub const fn is_finite(&self) -> bool {
+        matches!(self, Self::Val(_))
+    }
+}
+
+impl<T> From<T> for ValOrInf<T> {
+    fn from(value: T) -> Self {
+        Self::Val(value)
+    }
+}

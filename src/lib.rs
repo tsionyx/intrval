@@ -4,6 +4,7 @@
 #[cfg(feature = "arbitrary")]
 mod arbitrary;
 pub(crate) mod bounds;
+pub mod discrete;
 pub(crate) mod helper;
 mod interval;
 mod ops;
@@ -16,7 +17,7 @@ pub use self::arbitrary::BoundedInterval;
 
 pub use self::{
     bounds::{Bounded, EmptyIntervalError, Endpoint, IntoBounds},
-    helper::{OneOrPair, Size, Zero},
+    helper::{OneOrPair, Size, ValOrInf, Zero},
     interval::Interval,
     set::SetOps,
     singleton::{Singleton, SingletonBounds},
