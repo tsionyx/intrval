@@ -403,6 +403,44 @@ where
     }
 }
 
+mod shift_ops {
+    //! The shift operations are implemented as aliases for
+    //! `Sub` -> `Shl` and `Add` -> `Shr` operations.
+    //! This is done to provide syntactic sugar for shifting intervals.
+    //!
+    //! These implementations may be confusing at first, since `Shl/Shr` (<</>>)
+    //! usually mean moving toward greater/less values,
+    //! but this does quite the opposite.
+    //! The notion of shifting here rather coincides with the common
+    //! sense of moving left/right towards negative/positive infinity.
+    #![allow(clippy::suspicious_arithmetic_impl)]
+    use core::ops::{Add, Shl, Shr, Sub};
+
+    use super::Interval;
+
+    impl<T> Shl<T> for Interval<T>
+    where
+        Self: Sub<T, Output = Self>,
+    {
+        type Output = Self;
+
+        fn shl(self, rhs: T) -> Self::Output {
+            self - rhs
+        }
+    }
+
+    impl<T> Shr<T> for Interval<T>
+    where
+        Self: Add<T, Output = Self>,
+    {
+        type Output = Self;
+
+        fn shr(self, rhs: T) -> Self::Output {
+            self + rhs
+        }
+    }
+}
+
 impl<T> Interval<T>
 where
     Self: Bounded<T>,
@@ -780,6 +818,15 @@ mod add_tests {
         let a = interval!([-5, 12]);
         let b = interval!((120, =287));
         assert_eq!(a - b, interval!((=-292, -108)));
+    }
+
+    #[test]
+    fn shifts() {
+        let a = interval!(>= 2);
+        assert_eq!(a << 8, interval!(>= -6));
+
+        let b = interval!([3, 10]);
+        assert_eq!(b >> 5, interval!([8, 15]));
     }
 }
 
