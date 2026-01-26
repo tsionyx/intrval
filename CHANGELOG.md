@@ -18,7 +18,7 @@ _2026-01-20_
 
 - `impl<T: PartialOrd> PartialEq for Interval<T>` to allow to compare
   different representations without `reduce`-ing:
-  - all _degenerate_ (empty) intervals are equal to each other;
+  - all _empty_ intervals are equal to each other;
   - the `Singleton(x)` equals to `Closed((x, x))`;
 
 ## Changed
@@ -121,7 +121,7 @@ Represent a subset of single-dimensioned ordered set bounded by at most 2 points
     - `enclosure`;
 
 - other methods:
-  - `is_empty` to check whether an interval contain no points (_degenerate_);
+  - `is_empty` to check whether an interval contain no points;
   - `is_full` to check whether an interval contain all possible points (_universe_);
   - `len` to get a measure of an interval (as the `Size<Diff<T>>` type);
   - `clamp` to force the given point to fall into the `Interval`;
@@ -131,8 +131,8 @@ Represent a subset of single-dimensioned ordered set bounded by at most 2 points
   - `map` to convert to another `Interval<U>` given transformation function
     `Fn(T) -> (U)`;
   - `reduce` to simplify the defintion of an `Interval` to the equivalent one:
-    - the _degenerate_ reduced to the `Interval::Empty`;
-    - the _singleton_ interval `[x, x]` reduced to `Interval::Singleton(x)`
+    - the _empty_ reduced to the `Interval::Empty`;
+    - the _singleton_ (_degenerate_) interval `[x, x]` reduced to `Interval::Singleton(x)`
       (if the _singleton_ feature enabled);
 
   - `into_closure` to convert into an `Interval` with closed bounds;

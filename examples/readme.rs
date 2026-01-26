@@ -81,14 +81,14 @@ fn main() {
     let iuni = interval!(U: i32);
 
     assert_eq!(igt10 + i_2to10_incl, interval!(> 8));
-    // adding degenerate does not change the normal one
+    // adding empty does not change the proper one
     assert_eq!(igt10 + interval!((1, 0)), igt10);
     assert_eq!(interval!((1, 0)) + igt10, igt10);
 
     assert_eq!(i_2to10_incl - i5to20_excl, interval!((=-22, 5)));
-    // subtracting degenerate does not change the normal one
+    // subtracting empty does not change the proper one
     assert_eq!(igt10 - interval!((1, 0)), igt10);
-    // subtracting _from_ degenerate negates the normal one
+    // subtracting _from_ empty negates the proper one
     assert_eq!(interval!((2, 0)) - i_2to10_incl, -i_2to10_incl);
 
     // Interval::Empty is neutral over multiplication

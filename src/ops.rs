@@ -139,12 +139,12 @@ impl<T> Interval<T> {
                     if self.is_empty() {
                         self
                     } else {
-                        // sometimes a degenerate interval can become a valid one,
-                        // e.g. `[2, 1] * 0 -> [0, 0]`, so we have to force it to be empty again
+                        // sometimes an _empty_ interval can become a proper one,
+                        // e.g. `[2, 1] * 0 -> [0, 0]`, so we have to force it to be _empty_ again
                         Self::Empty
                     }
                 } else {
-                    // non-empty interval times `0` should map to the singleton `[0]` interval
+                    // _non-empty_ interval times `0` should map to the singleton `[0]` interval
                     Self::Closed((T::zero(), T::zero()))
                 }
             }

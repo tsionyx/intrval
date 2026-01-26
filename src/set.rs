@@ -26,7 +26,7 @@ where
         use crate::bounds::Endpoint::{Excluded, Included, Infinite};
 
         let Ok((a, b)) = self.into_bounds() else {
-            // an empty interval does not contain any point
+            // an _empty_ interval does not contain any point
             return false;
         };
 
@@ -48,8 +48,8 @@ pub trait SetOps<T>: Bounded<T> {
     /// i.e. the span(s) of values that are in `self` but **not** in `other`.
     ///
     /// # Errors
-    /// Return `Err((self, other))` if `self` is a (not degenerate) subset of `other`.
-    /// In this case it is safe to assume the difference is _degenerate_.
+    /// Return `Err((self, other))` if `self` is a (_non-empty_) subset of `other`.
+    /// In this case it is safe to assume the difference is _empty_.
     fn difference<R>(self, other: R) -> Result<OneOrPair<Self>, (Self, R)>
     where
         T: Ord,
@@ -61,7 +61,7 @@ pub trait SetOps<T>: Bounded<T> {
     {
         if self.is_sub(&other) {
             return if (&self).into_bounds().is_err() {
-                // if `self` is degenerate, just return it as is
+                // if `self` is _empty_, just return it as is
                 Ok(self.into())
             } else {
                 Err((self, other))
@@ -75,9 +75,9 @@ pub trait SetOps<T>: Bounded<T> {
         let ((a, b), (c, d)) = match pair_into_bounds(self, other) {
             Ok(bounds) => bounds,
             Err((left, _right)) => {
-                // if either _left_ or _right_ is degenerate, return _left_ as is:
-                // - if _left_ is degenerate, then we have nothing to subtract from;
-                // - if _right_ is degenerate, then there is nothing to subtract, just return _left_ as is.
+                // if either `left` or `right` is _empty_, return `left` as is:
+                // - if `left` is _empty_, then we have nothing to subtract from;
+                // - if `right` is _empty_, then there is nothing to subtract, just return `left` as is.
                 return Ok(left.into());
             }
         };
@@ -113,15 +113,15 @@ pub trait SetOps<T>: Bounded<T> {
     /// When the inputs do not overlap, the result is equivalent to their [union][Self::union].
     ///
     /// # Errors
-    /// Return `other` if the inputs are equal and **not degenerate**.
-    /// In this case it is safe to assume the symmetric difference is _degenerate_.
+    /// Return `other` if the inputs are equal and **non-empty**.
+    /// In this case it is safe to assume the symmetric difference is _empty_.
     ///
     /// Is is tempting here to make the return type `Result<_, Self>`,
     /// because it is very easy for the `Err` branch
     /// to convert the `R` into `Self`, but this can lead
     /// to accident use of `.unwrap_or_else(OneOrPair::One)` which is not correct:
     /// the `Err` data is here only for diagnostic use and should be fallen back
-    /// with manually constructed _degenerate_ interval.
+    /// with manually constructed _empty_ interval.
     fn symmetric_difference<R>(self, other: R) -> Result<OneOrPair<Self>, R>
     where
         T: Ord,
@@ -143,12 +143,12 @@ pub trait SetOps<T>: Bounded<T> {
 
         match has_equal_bounds {
             Some(true) => {
-                // the intervals are the same => symmetric difference is empty (degenerate)
+                // the intervals are the same => symmetric difference is _empty_
                 return Err(other);
             }
             Some(false) => {}
             None => {
-                // both are degenerate, just return `self` as is
+                // both are _empty_, just return `self` as is
                 return Ok(self.into());
             }
         }
@@ -156,8 +156,8 @@ pub trait SetOps<T>: Bounded<T> {
         let ((a, b), (c, d)) = match pair_into_bounds(self, other) {
             Ok(bounds) => bounds,
             Err((left, right)) => {
-                // if _right_ is degenerate, just return `left` as is,
-                // otherwise the `left` should be degenerate, so transform `right` into `Self` and return it.
+                // if `right` is _empty_, just return `left` as is,
+                // otherwise the `left` should be _empty_, so transform `right` into `Self` and return it.
                 let res = right.into_bounds().map_or(left, Self::from_bounds);
                 return Ok(res.into());
             }
@@ -195,11 +195,11 @@ pub trait SetOps<T>: Bounded<T> {
     /// Compute the intersection of `self` and `other`.
     ///
     /// # Notes
-    /// If the `self` is degenerate, just return it as is.
+    /// If the `self` is _empty_, just return it as is.
     ///
     /// # Errors
-    /// Return `other` if it is degenerate (for the normal `self`).
-    /// In this case it is safe to assume the intersection is _degenerate_.
+    /// Return `other` if it is _empty_ (for the normal `self`).
+    /// In this case it is safe to assume the intersection is _empty_.
     fn intersect<R>(self, other: R) -> Result<Self, R>
     where
         T: Ord,
@@ -209,12 +209,12 @@ pub trait SetOps<T>: Bounded<T> {
         let ((a, b), (c, d)) = match pair_into_bounds(self, other) {
             Ok(bounds) => bounds,
             Err((left, right)) => {
-                let left_degenerate = left.into_bounds().err();
-                // if _left_ is degenerate, return it as is
-                return left_degenerate.map(Self::from).ok_or({
-                    // otherwise, _left_ is valid and _right_ is degenerate,
+                let left_empty = left.into_bounds().err();
+                // if `left` is _empty_, return it as is
+                return left_empty.map(Self::from).ok_or({
+                    // otherwise, `left` is valid and `right` is _empty_,
                     // but we cannot construct a value of `Self`
-                    // from a degenerate _right_, so just return it as `Err`
+                    // from an _empty_ `right`, so just return it as `Err`
                     right
                 });
             }
@@ -233,7 +233,7 @@ pub trait SetOps<T>: Bounded<T> {
     /// return a [pair][OneOrPair::Pair] of pairs of ordered ranges
     ///
     /// # Notes
-    /// If at least one of [`IntoBounds::into_bounds`] fails (the value is degenerate),
+    /// If at least one of [`IntoBounds::into_bounds`] fails (the value is _empty_),
     /// return the other value wrapped in [`OneOrPair::One`].
     fn union<R>(self, other: R) -> OneOrPair<Self>
     where
@@ -244,9 +244,9 @@ pub trait SetOps<T>: Bounded<T> {
         let ((a, b), (c, d)) = match pair_into_bounds(self, other) {
             Ok(bounds) => bounds,
             Err((left, right)) => {
-                // - if _right_ is degenerate, return _left_ as is (either it is degenerate or not)
-                // - if _right_ is not degenerate (then _left_ should be degenerate, since the pair failed),
-                //   then transform the _right_ into `Self` and return it.
+                // - if `right` is _empty_, return `left` as is (either it is _empty_ or not)
+                // - if `right` is _non-empty_ (then `left` should be _empty_, since the pair failed),
+                //   then transform the `right` into `Self` and return it.
                 return OneOrPair::One(right.into_bounds().map_or(left, Self::from_bounds));
             }
         };
@@ -258,8 +258,8 @@ pub trait SetOps<T>: Bounded<T> {
             let (l, r) = (max_start.as_ref(), min_end.as_ref());
             let empty_intersection = l > r;
 
-            // `[x, x)` or `(x, x]` is an empty gap for empty intersection => intervals are joint
-            // `(x, x)` is an empty gap for empty intersection `(x, x)` => intervals are disjoint
+            // `[x, x)` or `(x, x]` is an _empty_ gap for _empty_ intersection => intervals are joint
+            // `(x, x)` is an _empty_ gap for _empty_ intersection `(x, x)` => intervals are disjoint
             let empty_gap = !r > !l;
             empty_intersection && !empty_gap
         };
@@ -279,7 +279,7 @@ pub trait SetOps<T>: Bounded<T> {
     /// also covering possible 'gap' between them.
     ///
     /// # Notes
-    /// If at least one of [`IntoBounds::into_bounds`] fails (the value is degenerate),
+    /// If at least one of [`IntoBounds::into_bounds`] fails (the value is _empty_),
     /// return the other value wrapped in [`OneOrPair::One`].
     fn enclosure<R>(self, other: R) -> Self
     where
@@ -290,9 +290,9 @@ pub trait SetOps<T>: Bounded<T> {
         let ((a, b), (c, d)) = match pair_into_bounds(self, other) {
             Ok(bounds) => bounds,
             Err((left, right)) => {
-                // - if _right_ is degenerate, return _left_ as is (either it is degenerate or not)
-                // - if _right_ is not degenerate (then _left_ should be degenerate, since the pair failed),
-                //   then transform the _right_ into `Self` and return it.
+                // - if `right` is _empty_, return `left` as is (either it is _empty_ or not)
+                // - if `right` is _non-empty_ (then `left` should be _empty_, since the pair failed),
+                //   then transform the `right` into `Self` and return it.
                 return right.into_bounds().map_or(left, Self::from_bounds);
             }
         };
@@ -302,22 +302,22 @@ pub trait SetOps<T>: Bounded<T> {
         Self::from_bounds((start, end))
     }
 
-    /// Returns `true` if there is a non-empty gap between `self` and `other`.
+    /// Returns `true` if there is a _non-empty_ gap between `self` and `other`.
     /// This implies the `self.union(other)` guaranteed to be a [whole span][OneOrPair::One]
     /// without [jumps](https://en.wikipedia.org/wiki/Classification_of_discontinuities)
     ///
-    /// This is **not equivalent** to checking for an empty intersection.
+    /// This is **not equivalent** to checking for an _empty_ intersection.
     /// because two intervals can 'touch' at a single point, where
     /// one of them includes the point and another exclusively approaches it (open interval).
     /// This case is considered as _not disjoint_ (i.e. _joint_),
-    /// because there is no gap between the intervals, even though their intersection is empty.
+    /// because there is no gap between the intervals, even though their intersection is _empty_.
     fn is_disjoint<'a, R>(&'a self, other: R) -> bool
     where
         T: Ord + 'a,
         &'a Self: IntoBounds<&'a T>,
         R: IntoBounds<&'a T>,
     {
-        // if at least one of the intervals is degenerate, they cannot be disjoint
+        // if at least one of the intervals is _empty_, they cannot be disjoint
 
         let Ok((self_start, self_end)) = self.into_bounds() else {
             return false;
@@ -330,8 +330,8 @@ pub trait SetOps<T>: Bounded<T> {
         let min_end = self_end.min(other_end);
 
         let empty_intersection = max_start > min_end;
-        // `[x, x)` or `(x, x]` is an empty gap for empty intersection => intervals are joint
-        // `(x, x)` is an empty gap for empty intersection `(x, x)` => intervals are disjoint
+        // `[x, x)` or `(x, x]` is an _empty_ gap for _empty_ intersection => intervals are joint
+        // `(x, x)` is an _empty_ gap for _empty_ intersection `(x, x)` => intervals are disjoint
         let empty_gap = !min_end > !max_start;
         empty_intersection && !empty_gap
     }
@@ -345,13 +345,13 @@ pub trait SetOps<T>: Bounded<T> {
         R: IntoBounds<&'a T>,
     {
         let Ok((self_start, self_end)) = self.into_bounds() else {
-            // the degenerate interval (with no valid bounds) is contained in any interval
+            // the _empty_ interval (with no valid bounds) is contained in **any** interval
             return true;
         };
 
         let Ok((other_start, other_end)) = other.into_bounds() else {
-            // no interval can be inside a degenerate interval (with no valid bounds)
-            // (except the empty one, which is handled above)
+            // **no** interval can be inside an _empty_ interval (with no valid bounds)
+            // (except the _empty_ one, which is handled above)
             return false;
         };
 
@@ -367,13 +367,13 @@ pub trait SetOps<T>: Bounded<T> {
         R: IntoBounds<&'a T>,
     {
         let Ok((other_start, other_end)) = other.into_bounds() else {
-            // the degenerate interval (with no valid bounds) is contained in any interval
+            // the _empty_ interval (with no valid bounds) is contained in **any** interval
             return true;
         };
 
         let Ok((self_start, self_end)) = self.into_bounds() else {
-            // no interval can be inside a degenerate interval (with no valid bounds)
-            // (except the empty one, which is handled above)
+            // **no** interval can be inside _empty_ empty interval (with no valid bounds)
+            // (except the _empty_ one, which is handled above)
             return false;
         };
 
