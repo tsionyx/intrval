@@ -36,8 +36,52 @@ pub trait IntDiv: Div + Sized {
     }
 }
 
+/// Extension of [linear types][Linear] with monotonic addition and subtraction.
+///
+/// The operation `monotonic_{add,sub}` is similar to the standard addition/subtraction,
+/// but contains additional checks to ensure that the result is greater/less than the `lhs`
+/// depending on the `rhs` of the operation.
+///
+/// This generalizes the concept of `checked_*` arithmetic methods for integer types.
+/// to other linear types.
+/// E.g. for floating-point types, the `monotonic_{add,sub}` would check for `NaN` results
+/// or the loss of precision when the operands' magnitudes differ significantly.
+pub trait MonotonicLinear: Linear + PartialOrd {
+    /// Check and perform monotonic addition.
+    ///
+    /// The operation should ensure the sum is:
+    /// - greater than `self` when the `rhs` is greater than zero;
+    /// - less than `self` when the `rhs` is less than zero;
+    /// - equal to `self` when the `rhs` is equal to zero.
+    ///
+    /// or in pseudocode:
+    /// ```no_compile
+    /// let zero_ord = rhs.cmp_zero()?;
+    /// let result = self.clone() + rhs;
+    /// (result.partial_cmp(&self)? == zero_ord).then_some(result)
+    /// ```
+    fn monotonic_add(self, rhs: Self) -> Option<Self>;
+
+    /// Check and perform monotonic subtraction.
+    ///
+    /// The operation should ensure the difference is:
+    /// - less than `self` when the `rhs` is greater than zero;
+    /// - greater than `self` when the `rhs` is less than zero;
+    /// - equal to `self` when the `rhs` is equal to zero.
+    ///
+    /// or in pseudocode:
+    /// ```no_compile
+    /// let zero_ord = rhs.cmp_zero()?;
+    /// let result = self.clone() - rhs;
+    /// (result.partial_cmp(&self)? == zero_ord.reverse()).then_some(result)
+    /// ```
+    fn monotonic_sub(self, rhs: Self) -> Option<Self>;
+}
+
 mod impls {
-    use super::{IntDiv, Ratio};
+    use crate::helper::Zero;
+
+    use super::{IntDiv, MonotonicLinear, Ratio};
 
     /// Implement `IntDiv` for integer types by simply returning the ratio as is.
     macro_rules! impl_int_div_for_int {
@@ -157,6 +201,49 @@ mod impls {
             }
         };
     }
+
+    /// Implement `MonotonicLinear` for integer types using the `checked_*` methods.
+    macro_rules! impl_monotonic_for_int {
+        ($($int:ty),+ $(,)?) => {$(
+            impl MonotonicLinear for $int {
+                fn monotonic_add(self, rhs: Self) -> Option<Self> {
+                    self.checked_add(rhs)
+                }
+
+                fn monotonic_sub(self, rhs: Self) -> Option<Self> {
+                    self.checked_sub(rhs)
+                }
+            }
+        )+};
+    }
+    impl_monotonic_for_int!(i8, u8, i16, u16, i32, u32, i64, u64, usize, isize, i128, u128);
+
+    /// Implement `MonotonicLinear` for floating types by explicitly checking the result.
+    macro_rules! impl_monotonic_for_float {
+        ($($f:ty),+ $(,)?) => {$(
+            impl MonotonicLinear for $f {
+                fn monotonic_add(self, rhs: Self) -> Option<Self> {
+                    let zero_ord = rhs.cmp_zero()?;
+                    let result = self + rhs;
+                    if !result.is_finite() {
+                        return None;
+                    }
+                    (result.partial_cmp(&self)? == zero_ord).then_some(result)
+                }
+
+                fn monotonic_sub(self, rhs: Self) -> Option<Self> {
+                    let zero_ord = rhs.cmp_zero()?;
+                    let result = self - rhs;
+                    if !result.is_finite() {
+                        return None;
+                    }
+                    (result.partial_cmp(&self)? == zero_ord.reverse()).then_some(result)
+                }
+            }
+        )+};
+    }
+
+    impl_monotonic_for_float!(f32, f64);
 
     #[cfg(test)]
     mod tests {

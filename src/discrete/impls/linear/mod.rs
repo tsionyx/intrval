@@ -1,6 +1,6 @@
 use crate::{helper::Zero, interval::Interval};
 
-pub use self::ops_traits::{IntDiv, Linear};
+pub use self::ops_traits::{IntDiv, Linear, MonotonicLinear};
 
 mod discrete;
 mod ops;
@@ -99,7 +99,7 @@ impl<T> LinearSpace<T> {
 
 #[cfg(test)]
 mod tests {
-    use super::ops_traits::IntDiv;
+    use super::ops_traits::{IntDiv, MonotonicLinear};
 
     type F32 = ordered_float::OrderedFloat<f32>;
 
@@ -109,11 +109,31 @@ mod tests {
         }
     }
 
+    impl MonotonicLinear for F32 {
+        fn monotonic_add(self, rhs: Self) -> Option<Self> {
+            self.0.monotonic_add(rhs.0).map(Self)
+        }
+
+        fn monotonic_sub(self, rhs: Self) -> Option<Self> {
+            self.0.monotonic_sub(rhs.0).map(Self)
+        }
+    }
+
     type F64 = ordered_float::OrderedFloat<f64>;
 
     impl IntDiv for F64 {
         fn round_to_int(r: Self) -> Self {
             Self(f64::round_to_int(r.0))
+        }
+    }
+
+    impl MonotonicLinear for F64 {
+        fn monotonic_add(self, rhs: Self) -> Option<Self> {
+            self.0.monotonic_add(rhs.0).map(Self)
+        }
+
+        fn monotonic_sub(self, rhs: Self) -> Option<Self> {
+            self.0.monotonic_sub(rhs.0).map(Self)
         }
     }
 }

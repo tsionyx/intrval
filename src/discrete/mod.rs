@@ -5,7 +5,7 @@ pub mod rounding;
 
 use crate::helper::{OneOrPair, ValOrInf};
 
-pub use self::impls::linear::{IntDiv, Linear, LinearSpace};
+pub use self::impls::linear::{IntDiv, Linear, LinearSpace, MonotonicLinear};
 
 /// Trait representing a discrete set of ordered points.
 pub trait DiscreteOrdSet {
