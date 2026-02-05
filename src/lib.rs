@@ -11,14 +11,16 @@ mod ops;
 mod set;
 pub(crate) mod singleton;
 mod str;
+mod traits;
 
 #[cfg(feature = "arbitrary")]
 pub use self::arbitrary::BoundedInterval;
 
 pub use self::{
     bounds::{Bounded, EmptyIntervalError, Endpoint, IntoBounds},
-    helper::{OneOrPair, Size, ValOrInf, Zero},
+    helper::{OneOrPair, Size, ValOrInf},
     interval::Interval,
     set::SetOps,
     singleton::{Singleton, SingletonBounds},
+    traits::{IntDiv, Linear, Measure, MonotonicLinear, Zero},
 };

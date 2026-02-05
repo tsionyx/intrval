@@ -3,13 +3,10 @@ use core::cmp::Ordering;
 use crate::{
     bounds::Endpoint,
     helper::{OneOrPair, ValOrInf},
+    traits::{IntDiv, MonotonicLinear},
 };
 
-use super::{
-    super::super::DiscreteOrdSet,
-    ops_traits::{IntDiv, MonotonicLinear},
-    LinearSpace,
-};
+use super::{super::super::DiscreteOrdSet, LinearSpace};
 
 impl<T> LinearSpace<T>
 where
@@ -539,7 +536,7 @@ mod prop_test {
 
     use proptest::prelude::*;
 
-    use crate::{helper::Zero, Interval};
+    use crate::{traits::Zero, Interval};
 
     use super::*;
 
