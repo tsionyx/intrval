@@ -1,10 +1,7 @@
-use crate::{helper::Zero, interval::Interval};
-
-pub use self::ops_traits::{IntDiv, Linear, MonotonicLinear};
+use crate::{interval::Interval, traits::Zero};
 
 mod discrete;
 mod ops;
-mod ops_traits;
 
 #[derive(Debug, Copy, Clone)]
 /// A discrete linear space representing
@@ -107,7 +104,7 @@ impl<T: PartialOrd> Eq for LinearSpace<T> {}
 
 #[cfg(test)]
 mod tests {
-    use super::ops_traits::{IntDiv, MonotonicLinear};
+    use crate::traits::{IntDiv, MonotonicLinear};
 
     type F32 = ordered_float::OrderedFloat<f32>;
 

@@ -4,7 +4,10 @@
 
 use core::ops::Sub;
 
-use crate::helper::{minmax, OneOrPair, Zero};
+use crate::{
+    helper::{minmax, OneOrPair},
+    traits::Zero,
+};
 
 use super::DiscreteOrdSet;
 

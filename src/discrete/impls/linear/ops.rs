@@ -3,7 +3,7 @@ use core::{
     ops::{Div, Mul, Shl, Shr},
 };
 
-use crate::{helper::Zero, interval::Interval};
+use crate::{interval::Interval, traits::Zero};
 
 use super::LinearSpace;
 

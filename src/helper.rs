@@ -1,33 +1,6 @@
 //! Auxiliary types and functions.
-use core::cmp::Ordering;
 
-/// The trait to define scalar (single-dimension) types
-/// with a dedicated origin (zero) point.
-///
-/// Currently, it is blanket-implemented for all types that implement `TryFrom<u8>`,
-/// which covers at least all core primitive numeric types
-/// (like `iN`, `uN` and `fN` where N is the size in bits).
-pub trait Zero {
-    /// Produce the zero (neutral in terms of sum) element of a type.
-    fn zero() -> Self;
-
-    /// Determines how the value is comparable to zero.
-    fn cmp_zero(&self) -> Option<Ordering>;
-}
-
-impl<T> Zero for T
-where
-    T: TryFrom<u8> + PartialOrd,
-{
-    fn zero() -> Self {
-        Self::try_from(0).unwrap_or_else(|_| panic!("conversion from 0 failed"))
-    }
-
-    fn cmp_zero(&self) -> Option<Ordering> {
-        let zero = Self::try_from(0).ok()?;
-        self.partial_cmp(&zero)
-    }
-}
+use crate::traits::Zero;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// Represent a length of the arbitrary interval.

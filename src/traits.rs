@@ -1,4 +1,52 @@
-use core::ops::{Add, Div, Mul, Sub};
+//! The traits describing some numerical behaviour.
+use core::{
+    cmp::Ordering,
+    ops::{Add, Div, Mul, Sub},
+};
+
+/// The trait to define scalar (single-dimension) types
+/// with a dedicated origin (zero) point.
+///
+/// Currently, it is blanket-implemented for all types that implement `TryFrom<u8>`,
+/// which covers at least all core primitive numeric types
+/// (like `iN`, `uN` and `fN` where N is the size in bits).
+pub trait Zero {
+    /// Produce the zero (neutral in terms of sum) element of a type.
+    fn zero() -> Self;
+
+    /// Determines how the value is comparable to zero.
+    fn cmp_zero(&self) -> Option<Ordering>;
+}
+
+impl<T> Zero for T
+where
+    T: TryFrom<u8> + PartialOrd,
+{
+    fn zero() -> Self {
+        Self::try_from(0).unwrap_or_else(|_| panic!("conversion from 0 failed"))
+    }
+
+    fn cmp_zero(&self) -> Option<Ordering> {
+        let zero = Self::try_from(0).ok()?;
+        self.partial_cmp(&zero)
+    }
+}
+
+/// The ability to have a distance between two values of the type.
+pub trait Measure:
+    Sized + Add<Self::Distance, Output = Self> + Sub<Self::Distance, Output = Self>
+{
+    /// The type representing a distance (difference) between two quantities.
+    type Distance;
+}
+
+// blanket impl for homogeneous addition/subtraction
+impl<T> Measure for T
+where
+    Self: Add<Output = Self> + Sub<Output = Self>,
+{
+    type Distance = Self;
+}
 
 /// Helper trait combining the four basic arithmetic _linear_ operations:
 /// - addition / subtraction;
@@ -6,31 +54,19 @@ use core::ops::{Add, Div, Mul, Sub};
 /// - dividing to get scalar (ratio) value.
 ///
 /// <https://en.wikipedia.org/wiki/Linear_space>
-pub trait Linear:
-    Sized
-    + Add<Self, Output = Self>
-    + Sub<Self, Output = Self>
-    + Mul<Ratio<Self>, Output = Self>
-    + Div<Self>
-{
-}
+pub trait Linear: Measure<Distance = Self> + Mul<Ratio<Self>, Output = Self> + Div<Self> {}
 
 type Ratio<T> = <T as Div<T>>::Output;
 
-impl<T> Linear for T where
-    T: Add<Self, Output = Self>
-        + Sub<Self, Output = Self>
-        + Mul<Ratio<Self>, Output = Self>
-        + Div<Self>
-{
-}
+impl<T> Linear for T where T: Measure<Distance = Self> + Mul<Ratio<Self>, Output = Self> + Div<Self> {}
 
 /// Extend a [self-divisible type][Div] with integer division.
 pub trait IntDiv: Div + Sized {
     /// Ensure the ratio to be integer by rounding it (towards zero).
     fn round_to_int(r: Ratio<Self>) -> Ratio<Self>;
 
-    /// Emulate integer division by rounding the ratio to integer (towards zero).
+    /// Perform integer division by rounding the ratio to integer (towards zero)
+    /// using the [`Self::round_to_int`] method.
     fn int_div(self, other: Self) -> Ratio<Self> {
         Self::round_to_int(self / other)
     }
@@ -79,9 +115,12 @@ pub trait MonotonicLinear: Linear + PartialOrd {
 }
 
 mod impls {
-    use crate::helper::Zero;
+    use super::{IntDiv, MonotonicLinear, Ratio, Zero};
 
-    use super::{IntDiv, MonotonicLinear, Ratio};
+    // FIXME: impl for `std` types (not `core`):
+    // impl Measure for std::time::{SystemTime, Instant} {
+    //     type Distance = core::time::Duration;
+    // }
 
     /// Implement `IntDiv` for integer types by simply returning the ratio as is.
     macro_rules! impl_int_div_for_int {
@@ -93,7 +132,7 @@ mod impls {
             }
         )+};
     }
-    impl_int_div_for_int!(i8, u8, i16, u16, i32, u32, i64, u64, usize, isize, i128, u128);
+    impl_int_div_for_int!(i8, u8, i16, u16, i32, u32, i64, u64, isize, usize, i128, u128);
 
     /// Implement `IntDiv` for floating-point types by truncating the ratio.
     ///
@@ -174,7 +213,7 @@ mod impls {
     ///
     /// The following underlying primitive types are now supported
     /// (and can be used on the right hand of `as` in the macro):
-    /// - integers: i8, u8, i16, u16, i32, u32, i64, u64, usize, isize, i128, u128
+    /// - integers: i8, u8, i16, u16, i32, u32, i64, u64, isize, usize, i128, u128
     /// - floats: f32, f64
     ///
     /// # Note
@@ -194,7 +233,7 @@ mod impls {
     /// does not work due to orphan rule.
     macro_rules! impl_int_div {
         ($num_ty:ty as $core_ty:ty) => {
-            impl $crate::discrete::IntDiv for $num_ty {
+            impl $crate::IntDiv for $num_ty {
                 fn round_to_int(
                     r: <Self as core::ops::Div>::Output,
                 ) -> <Self as core::ops::Div>::Output {
@@ -220,7 +259,7 @@ mod impls {
             }
         )+};
     }
-    impl_monotonic_for_int!(i8, u8, i16, u16, i32, u32, i64, u64, usize, isize, i128, u128);
+    impl_monotonic_for_int!(i8, u8, i16, u16, i32, u32, i64, u64, isize, usize, i128, u128);
 
     /// Implement `MonotonicLinear` for floating types by explicitly checking the result.
     macro_rules! impl_monotonic_for_float {

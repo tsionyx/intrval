@@ -1,6 +1,6 @@
 use core::{cmp::Ordering, ops::Sub};
 
-use crate::helper::{Pair, Zero};
+use crate::{helper::Pair, traits::Zero};
 
 use super::rand::{Distance, RandRng};
 
