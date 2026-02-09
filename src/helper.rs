@@ -88,6 +88,18 @@ impl<T> OneOrPair<T> {
             Self::Pair(v) => Ok(v),
         }
     }
+
+    /// Unwrap the single value if it is wrapped into the [`OneOrPair::One`],
+    /// otherwise fold the pair of values into a single one using the provided function.
+    pub fn single_or_fold<F>(self, f: F) -> T
+    where
+        F: FnOnce(T, T) -> T,
+    {
+        match self {
+            Self::One(v) => v,
+            Self::Pair((v1, v2)) => f(v1, v2),
+        }
+    }
 }
 
 impl<T> TryInto<Pair<T>> for OneOrPair<T> {
