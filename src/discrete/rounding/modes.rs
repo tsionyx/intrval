@@ -1,8 +1,14 @@
 use core::{cmp::Ordering, ops::Sub};
 
-use crate::{helper::Pair, traits::Zero};
+use crate::{
+    helper::{OneOrPair, Pair},
+    traits::Zero,
+};
 
-use super::rand::{Distance, RandRng};
+use super::{
+    rand::{Distance, RandRng},
+    RoundError,
+};
 
 #[cfg(feature = "random")]
 use super::rand::{bernoulli_sample, Probability};
@@ -24,55 +30,67 @@ pub enum Mode {
 }
 
 impl Mode {
+    /// Round the given point with the mode, providing nearest point(s).
+    ///
+    /// # Errors
+    ///
+    /// Return the nearest point (if it is [single][OneOrPair::One])
+    /// and the rounding cannot be made, e.g. the `nearest > point`
+    /// for the [floor mode][DirectedMode::TowardNegativeInfinity].
     pub(super) fn round<T>(
         self,
         point: &T,
-        (nearest_lower, nearest_upper): Pair<T>,
+        nearest: OneOrPair<T>,
         rng: Option<&mut dyn RandRng>,
-    ) -> T
+    ) -> Result<T, RoundError<T>>
     where
         T: Zero + PartialOrd,
         for<'any> &'any T: Sub,
         for<'any> <&'any T as Sub>::Output: Distance,
     {
         match self {
-            Self::Directed(dir_mode) => dir_mode.round(point, (nearest_lower, nearest_upper)),
+            Self::Directed(dir_mode) => dir_mode.round(point, nearest),
             Self::Nearest(tie_mode) => {
-                let selection = {
-                    let to_upper = distance(&nearest_upper, point);
-                    let to_lower = distance(&nearest_lower, point);
-                    match to_upper.partial_cmp(&to_lower) {
-                        Some(Ordering::Less) => TieSelection::Right,
-                        Some(Ordering::Greater) => TieSelection::Left,
-                        Some(Ordering::Equal) | None => {
-                            // when the distances are equal, use the tie-breaking mode
-                            tie_mode.select((&nearest_lower, &nearest_upper), rng)
+                Ok(nearest.single_or_fold(|nearest_lower, nearest_upper| {
+                    let selection = {
+                        let to_upper = distance(&nearest_upper, point);
+                        let to_lower = distance(&nearest_lower, point);
+                        match to_upper.partial_cmp(&to_lower) {
+                            Some(Ordering::Less) => TieSelection::Right,
+                            Some(Ordering::Greater) => TieSelection::Left,
+                            Some(Ordering::Equal) | None => {
+                                // when the distances are equal, use the tie-breaking mode
+                                tie_mode.select((&nearest_lower, &nearest_upper), rng)
+                            }
                         }
+                    };
+                    match selection {
+                        TieSelection::Left => nearest_lower,
+                        TieSelection::Right => nearest_upper,
                     }
-                };
-                match selection {
-                    TieSelection::Left => nearest_lower,
-                    TieSelection::Right => nearest_upper,
-                }
+                }))
             }
             #[cfg(feature = "random")]
             Self::Stochastic => {
-                let total: Option<f64> = distance(&nearest_upper, &nearest_lower).try_into().ok();
-                let to_lower: Option<f64> = distance(&nearest_lower, point).try_into().ok();
+                Ok(nearest.single_or_fold(|nearest_lower, nearest_upper| {
+                    let total: Option<f64> =
+                        distance(&nearest_upper, &nearest_lower).try_into().ok();
+                    let to_lower: Option<f64> = distance(&nearest_lower, point).try_into().ok();
 
-                // the closer (_less_ distance) to `lower`, the _lower_ the probability to pick `upper`
-                //
-                // Note: division by zero is safe here because the +/- inf handled separately.
-                let prob_upper = Probability::new(
-                    total.and_then(|total| to_lower.map(|to_lower| to_lower / total)),
-                );
+                    // the closer (_less_ distance) to `lower`, the _lower_ the probability to pick `upper`
+                    //
+                    // Note: division by zero is safe here because the +/- inf handled separately.
+                    let prob_upper = Probability::new(
+                        total.and_then(|total| to_lower.map(|to_lower| to_lower / total)),
+                    );
 
-                let select_upper = bernoulli_sample(prob_upper.get_f64(), rng);
-                if select_upper {
-                    nearest_upper
-                } else {
-                    nearest_lower
-                }
+                    let select_upper = bernoulli_sample(prob_upper.get_f64(), rng);
+                    if select_upper {
+                        nearest_upper
+                    } else {
+                        nearest_lower
+                    }
+                }))
             }
         }
     }
@@ -94,8 +112,14 @@ pub enum DirectedMode {
     #[doc(alias = "truncate")]
     /// Round towards zero.
     ///
-    /// If `x` is positive, it is the same as [round-down][Self::TowardNegativeInfinity].
-    /// If `x` is negative, it is the same as [round-up][Self::TowardPositiveInfinity].
+    /// If `x` is positive, it is (almost) the same as [round-down][Self::TowardNegativeInfinity].
+    /// If `x` is negative, it is (almost) the same as [round-up][Self::TowardPositiveInfinity].
+    ///
+    /// The only difference from the _floor/ceiling_ modes is that the rounding
+    /// is **sign-preserving**, i.e., it is not allowed for a rounded value to cross zero.
+    /// E.g., when rounding a positive number towards zero, the result cannot be negative,
+    /// so if the nearest representable value(s) are negative, the rounding will
+    /// yield an [error][RoundError::InvalidDirection].
     TowardZero,
 
     /// Round away from zero.
@@ -134,26 +158,65 @@ impl DirectedMode {
     /// An alias for [`Self::TowardZero`].
     pub const TRUNCATE: Self = Self::TowardZero;
 
-    fn round<T>(self, point: &T, (nearest_lower, nearest_upper): Pair<T>) -> T
+    fn round<T>(self, point: &T, nearest: OneOrPair<T>) -> Result<T, RoundError<T>>
     where
         T: Zero + PartialOrd,
         for<'any> &'any T: Sub,
         for<'any> <&'any T as Sub>::Output: Distance,
     {
-        match self {
-            Self::TowardZero | Self::AwayFromZero => {
-                match self.select((&nearest_lower, &nearest_upper)) {
-                    Some(TieSelection::Left) => nearest_lower,
-                    Some(TieSelection::Right) => nearest_upper,
-                    None => Mode::Nearest(TieBreakingMode::Directed(self)).round(
-                        point,
-                        (nearest_lower, nearest_upper),
-                        None,
-                    ),
+        let rounded = match nearest {
+            OneOrPair::One(nearest) => nearest,
+            OneOrPair::Pair((nearest_lower, nearest_upper)) => match self {
+                Self::TowardZero | Self::AwayFromZero => {
+                    match self.select((&nearest_lower, &nearest_upper)) {
+                        Some(TieSelection::Left) => nearest_lower,
+                        Some(TieSelection::Right) => nearest_upper,
+                        None => Mode::Nearest(TieBreakingMode::Directed(self)).round(
+                            point,
+                            OneOrPair::Pair((nearest_lower, nearest_upper)),
+                            None,
+                        )?,
+                    }
+                }
+                Self::TowardPositiveInfinity => nearest_upper,
+                Self::TowardNegativeInfinity => nearest_lower,
+            },
+        };
+        if self.sanity_check(point, &rounded) {
+            Ok(rounded)
+        } else {
+            Err(RoundError::InvalidDirection {
+                rounded,
+                direction: self,
+            })
+        }
+    }
+
+    fn sanity_check<T>(self, point: &T, rounded: &T) -> bool
+    where
+        T: Zero + PartialOrd,
+    {
+        match (self, point.cmp_zero()) {
+            (Self::TowardZero, ord) => match ord {
+                Some(Ordering::Greater) => {
+                    rounded <= point && rounded.cmp_zero().is_some_and(Ordering::is_ge)
+                }
+                Some(Ordering::Equal) => rounded == point,
+                Some(Ordering::Less) => {
+                    rounded >= point && rounded.cmp_zero().is_some_and(Ordering::is_le)
+                }
+                None => false, // incomparable to zero
+            },
+            (Self::AwayFromZero, ord) => {
+                match ord {
+                    Some(Ordering::Greater) => rounded >= point,
+                    Some(Ordering::Equal) => true,
+                    Some(Ordering::Less) => rounded <= point,
+                    None => false, // incomparable to zero
                 }
             }
-            Self::TowardPositiveInfinity => nearest_upper,
-            Self::TowardNegativeInfinity => nearest_lower,
+            (Self::TowardPositiveInfinity, _) => rounded >= point,
+            (Self::TowardNegativeInfinity, _) => rounded <= point,
         }
     }
 
