@@ -2,7 +2,7 @@
 # https://doc.rust-lang.org/clippy/configuration.html
 
 # https://github.com/rust-lang/rust-clippy/blob/master/CHANGELOG.md#rust-169
-msrv = "1.69"
+msrv = "1.71"
 
 # The test are allowed to use `dbg!`, `expect`, `panic!` and `unwrap`.
 #

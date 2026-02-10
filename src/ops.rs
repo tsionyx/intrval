@@ -315,7 +315,7 @@ impl<T> Interval<T> {
                     .map(|(a, b)| (a.into_exclusive_bound(), b.into_exclusive_bound()))?;
 
                 let (a, b) = map_pair(product, |bound| {
-                    if matches!(bound, Bound::Excluded(ref t) if t.cmp_zero().map_or(false, Ordering::is_eq))
+                    if matches!(bound, Bound::Excluded(ref t) if t.cmp_zero().is_some_and(Ordering::is_eq))
                         && preserve_zero
                     {
                         Bound::Included(zero_result())
