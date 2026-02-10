@@ -51,10 +51,10 @@ _2026-01-20_
   lies to the right/left of the `Interval<T>`.
   The signature of the method matches the `PartialOrd::<T>::partial_cmp`,
   but implementing the latter would result in poor ergonomics
-  in other parts of codebase.
+  in other parts of the codebase.
 
 - improve the `Partial{Eq,Ord}` for `Endpoint` by enabling arbitrary `SIDE`-s to be comparable.
-  This became possible thanks to use of `ExtPoint` representing
+  This became possible thanks to the use of `ExtPoint` representing
   a (possibly infinite) point with its
   [neighbourhood](https://en.wikipedia.org/wiki/Neighbourhood_(mathematics)#Neighbourhood_of_a_point).
 
@@ -62,13 +62,13 @@ _2026-01-20_
   - empty `Interval::Empty` with `interval!(0)`;
   - universe `Interval::Full` with `interval!(U)`;
 
-- set-up more lints by carefully exploring the latest rustc and clippy lint groups;
+- set up more lints by carefully exploring the latest rustc and clippy lint groups;
 
 ## Added
 
 - `Interval::as_ref_bounds` as a synonym for `Interval::into_bounds(Interval::as_ref)`;
 - the internal `Container` trait to abstract away the `.contains` method using only `IntoBounds`;
-  - the `Interval::contains` just reuse the blanket implementation of it;
+  - the `Interval::contains` just reuses the blanket implementation of it;
 
 ## Removed
 

@@ -204,9 +204,9 @@ impl<const SIDE: bool, T: PartialOrd> PartialOrd for Prioritized<Endpoint<SIDE, 
 
         // `Low` variant always here to 'shrink' the interval, i.e.
         // - it is `Greater` than any `Normal` (except equivalent one) for `Endpoint<LEFT, T>`
-        //   (preferrable in `max`, _low_ priority in `min`);
+        //   (preferable in `max`, _low_ priority in `min`);
         // - it is `Less` than any `Normal` (except equivalent one) for `Endpoint<RIGHT, T>`
-        //   (preferrable in `min`, _low_ priority in `max`).
+        //   (preferable in `min`, _low_ priority in `max`).
         let (a, b) = map_pair((self, other), |p| p.as_ref().into_data().bound_val());
         match (self, other) {
             (Self::Low(_), Self::Normal(_)) if a.is_some() && b.is_some() && a != b => {

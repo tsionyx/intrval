@@ -243,7 +243,7 @@ pub enum ExtPoint<T> {
 
     /// The infinite point:
     /// - negative (for _false_);
-    /// - positive (for _true);
+    /// - positive (for _true_);
     Infinite(bool),
 }
 
