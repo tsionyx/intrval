@@ -1,8 +1,32 @@
-This is a list of all notable changes.
+# Changelog
 
-# v0.1.1
+All notable changes to this project will be documented in this file.
 
-_2026-01-20_
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+
+# [0.1.2] - 2026-02-10
+
+## Fixed
+
+- misconception about _degenerate_ intervals fixed in comments and variables.
+  A _degenerate_ interval is essentially a _singleton_ interval, i.e. having `len=0` (zero measure),
+  but not empty, because **there is a point that belongs to it**.
+
+## Changed
+
+- bump MSRV to _**1.71**_:
+  - transitive dependencies are updated to include MSRV=1.71:
+    - unicode-ident@1.0.23
+    - zmij@1.0.20
+
+- the syntax of [CHANGELOG](CHANGELOG.md) (this file) changed slightly to
+  support the [Keep a Changelog](https://keepachangelog.com) scheme.
+
+
+
+# [0.1.1] - 2026-01-20
 
 ## Fixed
 
@@ -75,9 +99,9 @@ _2026-01-20_
 - `impl RangeBounds<T> for Interval<T>`;
 
 
-# v0.1.0
+# [0.1.0] - 2026-01-07
 
-_2026-01-07_ (The first release)
+_The first release_
 
 
 ## Added
