@@ -184,7 +184,13 @@ where
     fn get_next(&self, point: &Self::Point) -> Option<Self::Point> {
         let adjust_nearest = |nearest: T| match nearest.partial_cmp(point)? {
             Ordering::Greater => Some(nearest),
-            Ordering::Equal => nearest.monotonic_add(self.step.clone()),
+            Ordering::Equal => nearest.monotonic_add(self.step.clone()).filter(|next| {
+                #[allow(clippy::option_if_let_else)]
+                self.get_max().is_some_and(|max| match max.into_val() {
+                    Some(max_v) => next <= &max_v,
+                    None => true,
+                })
+            }),
             Ordering::Less => None,
         };
 
@@ -197,7 +203,13 @@ where
     fn get_prev(&self, point: &Self::Point) -> Option<Self::Point> {
         let adjust_nearest = |nearest: T| match nearest.partial_cmp(point)? {
             Ordering::Greater => None,
-            Ordering::Equal => nearest.monotonic_sub(self.step.clone()),
+            Ordering::Equal => nearest.monotonic_sub(self.step.clone()).filter(|prev| {
+                #[allow(clippy::option_if_let_else)]
+                self.get_min().is_some_and(|min| match min.into_val() {
+                    Some(min_v) => prev >= &min_v,
+                    None => true,
+                })
+            }),
             Ordering::Less => Some(nearest),
         };
 
@@ -745,6 +757,10 @@ mod prop_test {
                 if let Some(next) = space.get_next(&point) {
                     prop_assert!(next > point, "next should be strictly greater than point");
 
+                    if let Some(max_v) = max.into_val() {
+                        prop_assert!(next <= max_v, "Next <= max");
+                    }
+
                     if let Some(min_v) = min.into_val() {
                         if point < min_v {
                             prop_assert_eq!(next, min_v,
@@ -774,6 +790,10 @@ mod prop_test {
                 let max = space.get_max().unwrap();
                 if let Some(prev) = space.get_prev(&point) {
                     prop_assert!(prev < point, "prev should be strictly less than point");
+
+                    if let Some(min_v) = min.into_val() {
+                        prop_assert!(prev >= min_v, "Prev >= min");
+                    }
 
                     if let Some(max_v) = max.into_val() {
                         if point > max_v {

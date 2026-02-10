@@ -1,6 +1,7 @@
 use crate::{interval::Interval, traits::Zero};
 
 mod discrete;
+pub mod iter;
 mod ops;
 
 #[derive(Debug, Copy, Clone)]
