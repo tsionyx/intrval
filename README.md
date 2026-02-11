@@ -5,6 +5,7 @@ intrvals
 [![Latest version](https://img.shields.io/crates/v/intrval.svg)](https://crates.io/crates/intrval)
 [![MSRV](https://img.shields.io/crates/msrv/intrval)](https://crates.io/crates/intrval)
 [![Documentation](https://docs.rs/intrval/badge.svg)](https://docs.rs/intrval)
+[![codecov](https://codecov.io/github/tsionyx/intrval/graph/badge.svg?token=6ODY9VWDZE)](https://codecov.io/github/tsionyx/intrval)
 
 
 `intrvals` is a generic intervals library with basic
