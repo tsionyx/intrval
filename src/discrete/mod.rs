@@ -17,6 +17,9 @@ pub trait DiscreteOrdSet {
         self.get_min().is_none() && self.get_max().is_none()
     }
 
+    /// Check if the set contains the given point.
+    fn contains(&self, point: &Self::Point) -> bool;
+
     /// Get the minimum point of the set, if it is not empty.
     ///
     /// The result is wrapped in [`ValOrInf`] to allow representing an

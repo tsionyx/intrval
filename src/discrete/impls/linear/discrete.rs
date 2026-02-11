@@ -74,6 +74,43 @@ where
 {
     type Point = T;
 
+    fn contains(&self, point: &Self::Point) -> bool {
+        // the point should be within the bounds
+        if !self.bounds.contains(point) {
+            return false;
+        }
+
+        let Some(min) = self.get_min() else {
+            return false;
+        };
+
+        let Some(max) = self.get_max() else {
+            return false;
+        };
+
+        // the point should be greater than or equal to the minimum
+        if let ValOrInf::Val(ref min_val) = min {
+            if point < min_val {
+                return false;
+            }
+        }
+
+        // the point should be less than or equal to the maximum
+        if let ValOrInf::Val(ref max_val) = max {
+            if point > max_val {
+                return false;
+            }
+        }
+
+        // the point should be a multiple of `step` from some origin
+        let origin = min
+            .into_val()
+            .or_else(|| max.into_val())
+            .unwrap_or_else(|| self.step.clone());
+        let stepped = find_stepped(point.clone(), origin, &self.step);
+        stepped == *point
+    }
+
     fn get_min(&self) -> Option<ValOrInf<Self::Point>> {
         self.min_value().filter(|min| {
             if min.is_finite() {
@@ -185,23 +222,67 @@ fn find_stepped<T>(x: T, origin: T, step: &T) -> T
 where
     T: Clone + PartialOrd + MonotonicLinear + IntDiv,
 {
-    let (direction, distance) = if x > origin {
-        (true, x.monotonic_sub(origin.clone()))
-    } else {
-        (false, origin.clone().monotonic_sub(x))
-    };
+    let direction = x > origin;
 
-    let Some(distance) = distance else {
-        // if the distance is overflowed, we can just return the `origin`
-        return origin;
+    let (mut x, mut additional_steps) = (x, 0_usize);
+    let distance = loop {
+        if direction {
+            let dist = x.clone().monotonic_sub(origin.clone());
+            if let Some(d) = dist {
+                break d;
+            }
+
+            let decr_x = x.monotonic_sub(step.clone());
+            if let Some(reduced_x) = decr_x {
+                x = reduced_x;
+                additional_steps += 1;
+            } else {
+                // if subtracting a `step` from `x` overflowed, we can just return the `origin`
+                return origin;
+            }
+        } else {
+            let dist = origin.clone().monotonic_sub(x.clone());
+            if let Some(d) = dist {
+                break d;
+            }
+
+            let incr_x = x.monotonic_add(step.clone());
+            if let Some(increased_x) = incr_x {
+                x = increased_x;
+                additional_steps += 1;
+            } else {
+                // if summing a `step` to `x` overflowed, we can just return the `origin`
+                return origin;
+            }
+        }
     };
 
     let no_steps = distance.int_div(step.clone());
     let delta = step.clone() * no_steps;
     if direction {
-        origin.clone().monotonic_add(delta)
+        origin.clone().monotonic_add(delta).map(|mut x| {
+            for _ in 0..additional_steps {
+                let next = x.clone().monotonic_add(step.clone());
+                if let Some(next) = next {
+                    x = next;
+                } else {
+                    break;
+                }
+            }
+            x
+        })
     } else {
-        origin.clone().monotonic_sub(delta)
+        origin.clone().monotonic_sub(delta).map(|mut x| {
+            for _ in 0..additional_steps {
+                let prev = x.clone().monotonic_sub(step.clone());
+                if let Some(prev) = prev {
+                    x = prev;
+                } else {
+                    break;
+                }
+            }
+            x
+        })
     }
     .unwrap_or(origin)
 }
@@ -558,6 +639,7 @@ mod prop_test {
         }
     }
 
+    // TODO: check for `ordered_float::OrderedFloat<f32>`
     type Int = i8;
 
     proptest! {
@@ -600,6 +682,30 @@ mod prop_test {
         fn having_nearest_equiv_non_empty(space: LinearSpace<Int>, point: Int) {
             let nearest = space.get_nearest(&point);
             prop_assert_eq!(nearest.is_none(), space.is_empty());
+        }
+
+        #[test]
+        fn nearest_always_contained(space: LinearSpace<Int>, point: Int) {
+            let nearest = space.get_nearest(&point);
+            if let Some(nearest) = nearest {
+                match nearest {
+                    OneOrPair::One(nearest) => prop_assert!(space.contains(&nearest)),
+                    OneOrPair::Pair((lower, upper)) => {
+                        prop_assert!(space.contains(&lower));
+                        prop_assert!(space.contains(&upper));
+                    }
+                }
+            }
+        }
+
+        #[test]
+        fn next_and_prev_always_contained(space: LinearSpace<Int>, point: Int) {
+            if let Some(next) = space.get_next(&point) {
+                prop_assert!(space.contains(&next));
+            }
+            if let Some(prev) = space.get_prev(&point) {
+                prop_assert!(space.contains(&prev));
+            }
         }
 
         #[test]
