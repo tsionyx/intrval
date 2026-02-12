@@ -957,16 +957,24 @@ mod random_rounds {
     extern crate std;
     use std::collections::HashMap;
 
+    use ::rand::{rngs::StdRng, SeedableRng as _};
+
     use super::*;
 
     #[test]
     fn equal_probability_for_tie() {
         let space = half_unbounded_odd();
-        let mode = Mode::Nearest(TieBreakingMode::Random);
+        let mode = Mode::Nearest(TieBreakingMode::Random { prob_upper: None });
 
         let x = 100;
         let n = 1_000;
-        let results = (0..n).map(|_| space.round(&x, mode).unwrap());
+
+        // random fixed seed to preserve test results between identical runs
+        let mut rng = StdRng::seed_from_u64(13_015_868_539_724_329_586);
+        let results = (0..n).map(|_| {
+            let rng: &mut dyn RandRng = &mut rng;
+            space.round_with_rng(&x, mode, rng).unwrap()
+        });
 
         let mut distrib = HashMap::new();
         for res in results {
@@ -997,7 +1005,13 @@ mod random_rounds {
         let prec = 100;
         let x = 578;
         let n = 8_000;
-        let results = (0..n).map(|_| space.round(&x, mode).unwrap());
+
+        // random fixed seed to preserve test results between identical runs
+        let mut rng = StdRng::seed_from_u64(17_353_928_030_973_914_206);
+        let results = (0..n).map(|_| {
+            let rng: &mut dyn RandRng = &mut rng;
+            space.round_with_rng(&x, mode, rng).unwrap()
+        });
 
         let mut distrib = HashMap::new();
         for res in results {

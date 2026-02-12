@@ -13,6 +13,8 @@ mod rand;
 #[cfg(test)]
 mod tests;
 
+use self::rand::RandRng;
+
 pub use self::{
     modes::{DirectedMode, Mode, TieBreakingMode},
     rand::Distance,
@@ -33,32 +35,31 @@ where
         for<'any> &'any Self::Point: Sub,
         for<'any> <&'any Self::Point as Sub>::Output: Distance,
     {
-        let (a, b) = match self.get_nearest_ordered(point)? {
-            OneOrPair::Pair(x) => x,
-            OneOrPair::One(v) => {
-                return Some(v);
-            }
-        };
+        round(self, point, mode.into(), None)
+    }
 
-        // check that the nearest points returned by [`DiscreteOrdSet::get_nearest`]
-        // (in case of a `OneOrPair::Pair` result)  are correct,
-        // i.e. that the given point is between them.
-        debug_assert!(
-            point >= &a && point <= &b,
-            "The pair of nearest points do not match the point to round",
-        );
-
-        // the inequality should not be allowed in a correct
-        // implementation of [`DiscreteOrdSet::get_nearest`],
-        // but we handle it gracefully by clamping to the nearest bound.
-        if point <= &a {
-            return Some(a);
-        }
-        if point >= &b {
-            return Some(b);
-        }
-
-        Some(mode.into().round(point, (a, b)))
+    #[cfg(feature = "random")]
+    #[allow(single_use_lifetimes)] // error[E0658]: anonymous lifetimes in `impl Trait` are unstable
+    /// Round the given point according to the specified [`Mode`].
+    ///
+    /// Optional random number generator can be provided
+    /// (only valid for [stochastic rounding][Mode::Stochastic]
+    /// or [random tie-breaking][TieBreakingMode::Random]).
+    ///
+    /// # Returns
+    ///
+    /// `None` when there are no nearest points to round to.
+    fn round_with_rng<'r>(
+        &self,
+        point: &Self::Point,
+        mode: impl Into<Mode>,
+        rng: impl Into<Option<&'r mut dyn RandRng>>,
+    ) -> Option<Self::Point>
+    where
+        for<'any> &'any Self::Point: Sub,
+        for<'any> <&'any Self::Point as Sub>::Output: Distance,
+    {
+        round(self, point, mode.into(), rng.into())
     }
 
     /// Sort and normalize the [`nearest points`][DiscreteOrdSet::get_nearest].
@@ -77,6 +78,41 @@ where
             }
         })
     }
+}
+
+fn round<S, T>(space: &S, point: &T, mode: Mode, rng: Option<&mut dyn RandRng>) -> Option<T>
+where
+    S: Roundable<Point = T> + ?Sized,
+    T: Zero + Ord,
+    for<'any> &'any T: Sub,
+    for<'any> <&'any T as Sub>::Output: Distance,
+{
+    let (a, b) = match space.get_nearest_ordered(point)? {
+        OneOrPair::Pair(x) => x,
+        OneOrPair::One(v) => {
+            return Some(v);
+        }
+    };
+
+    // check that the nearest points returned by [`DiscreteOrdSet::get_nearest`]
+    // (in case of a `OneOrPair::Pair` result)  are correct,
+    // i.e. that the given point is between them.
+    debug_assert!(
+        point >= &a && point <= &b,
+        "The pair of nearest points do not match the point to round",
+    );
+
+    // the inequality should not be allowed in a correct
+    // implementation of [`DiscreteOrdSet::get_nearest`],
+    // but we handle it gracefully by clamping to the nearest bound.
+    if point <= &a {
+        return Some(a);
+    }
+    if point >= &b {
+        return Some(b);
+    }
+
+    Some(mode.round(point, (a, b), rng))
 }
 
 impl<S> Roundable for S
