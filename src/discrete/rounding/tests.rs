@@ -1026,8 +1026,6 @@ mod random_rounds {
     extern crate std;
     use std::collections::HashMap;
 
-    use ::rand::{rngs::StdRng, SeedableRng as _};
-
     use super::*;
 
     #[test]
@@ -1038,12 +1036,7 @@ mod random_rounds {
         let x = 100;
         let n = 1_000;
 
-        // random fixed seed to preserve test results between identical runs
-        let mut rng = StdRng::seed_from_u64(13_015_868_539_724_329_586);
-        let results = (0..n).map(|_| {
-            let rng: &mut dyn RandRng = &mut rng;
-            space.round_with_rng(&x, mode, rng).unwrap()
-        });
+        let results = (0..n).map(|_| space.round_with_rng(&x, mode, None).unwrap());
 
         let mut distrib = HashMap::new();
         for res in results {
@@ -1075,12 +1068,7 @@ mod random_rounds {
         let x = 578;
         let n = 8_000;
 
-        // random fixed seed to preserve test results between identical runs
-        let mut rng = StdRng::seed_from_u64(17_353_928_030_973_914_206);
-        let results = (0..n).map(|_| {
-            let rng: &mut dyn RandRng = &mut rng;
-            space.round_with_rng(&x, mode, rng).unwrap()
-        });
+        let results = (0..n).map(|_| space.round_with_rng(&x, mode, None).unwrap());
 
         let mut distrib = HashMap::new();
         for res in results {

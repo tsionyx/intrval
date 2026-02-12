@@ -51,8 +51,16 @@ where
     /// Round the given point according to the specified [`Mode`].
     ///
     /// Optional random number generator can be provided
-    /// (only valid for [stochastic rounding][Mode::Stochastic]
-    /// or [random tie-breaking][TieBreakingMode::Random]).
+    /// This method only makes sense for [stochastic rounding][Mode::Stochastic]
+    /// or [random tie-breaking][TieBreakingMode::Random] modes.
+    /// If you are using fully deterministic rounding modes, you should probably
+    /// use the [`Self::round`] instead.
+    ///
+    /// # Note
+    ///
+    /// If no `rng` provided, the random-based rounding
+    /// will use the predefined [small rng][::rand::rngs::SmallRng] for any random choices.
+    /// This is `no-std` friendly but provides low-quality predetermined results.
     ///
     /// # Errors
     ///

@@ -161,3 +161,134 @@ impl<T> From<T> for ValOrInf<T> {
         Self::Val(value)
     }
 }
+
+/// Synchronization primitives for internal use.
+pub mod sync {
+    use core::{
+        cell::UnsafeCell,
+        hint,
+        sync::atomic::{AtomicBool, Ordering},
+    };
+
+    /// RAII guard that acquires a given [switch][AtomicBool]
+    /// on creation and releases it on drop.
+    ///
+    /// This allows to unlock the critical section even
+    /// if the code panics while executing the former.
+    struct SpinLockGuard<'a> {
+        switch: &'a AtomicBool,
+    }
+
+    impl<'a> SpinLockGuard<'a> {
+        fn acquire(switch: &'a AtomicBool) -> Self {
+            // spin until we acquire the lock, thus entering the critical section
+            while switch
+                .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+                .is_err()
+            {
+                hint::spin_loop();
+            }
+            Self { switch }
+        }
+    }
+
+    impl Drop for SpinLockGuard<'_> {
+        fn drop(&mut self) {
+            // exit the critical section by releasing the lock
+            self.switch.store(false, Ordering::Release);
+        }
+    }
+
+    /// Very simple implementation of a spinlock-based `OnceLock` for internal use.
+    pub struct OnceLock<T> {
+        value: UnsafeCell<Option<T>>,
+        lock: AtomicBool,
+    }
+
+    #[allow(unsafe_code)]
+    // SAFETY: We ensure exclusive access through the `self.lock` atomic boolean,
+    // and `T: Send` guarantees that the inner value may be safely accessed across
+    // threads even though `with_mut_spin_lock` can yield `&mut T` from `&self`.
+    unsafe impl<T: Send> Sync for OnceLock<T> {}
+
+    #[cfg_attr(not(feature = "random"), allow(dead_code))]
+    impl<T> OnceLock<T> {
+        /// Create a new [`OnceLock`] instance with uninitialized value and unlocked state.
+        pub const fn new() -> Self {
+            Self {
+                value: UnsafeCell::new(None),
+                lock: AtomicBool::new(false),
+            }
+        }
+
+        /// Execute a closure `f` with mutable access to the inner value of the [`OnceLock`],
+        /// initializing it with another closure `init` if it has not been initialized yet.
+        pub fn with_mut_spin_lock<Init, F, R>(&self, f: F, init: Init) -> R
+        where
+            Init: FnOnce() -> T,
+            F: FnOnce(&mut T) -> R,
+        {
+            let guard = SpinLockGuard::acquire(&self.lock);
+
+            #[allow(unsafe_code)]
+            let result = {
+                // SAFETY: the access is safe because we have exclusive access through the `self.lock`
+                let inner = unsafe { &mut *self.value.get() };
+                let rng = inner.get_or_insert_with(init);
+                f(rng)
+            };
+
+            drop(guard);
+            result
+        }
+    }
+}
+
+#[cfg_attr(not(feature = "random"), allow(dead_code))]
+/// Convert a slice into an array of fixed size `N`,
+/// padding with the default value of `T` if the slice is shorter than `N`.
+pub fn slice_to_array_or_default<T, const N: usize>(slice: &[T]) -> [T; N]
+where
+    T: Default + Clone,
+{
+    slice_to_array_or(slice, T::default())
+}
+
+/// Convert a slice into an array of fixed size `N`,
+/// padding with a specified value if the slice is shorter than `N`.
+pub fn slice_to_array_or<T, const N: usize>(slice: &[T], padding: T) -> [T; N]
+where
+    T: Clone,
+{
+    use core::array;
+
+    let mut array = array::from_fn(|_| padding.clone());
+
+    // determine the number of elements that are safe to clone
+    // (minimum of slice length and array length)
+    let items_to_clone = slice.len().min(array.len());
+
+    // clone the available data to the start of the array
+    array[..items_to_clone].clone_from_slice(&slice[..items_to_clone]);
+
+    array
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn padded_arr() {
+        let slice1 = &[1_u8, 2];
+        let slice2 = &[10_u8, 20, 30, 40];
+        let slice3 = &[1_000_u16, 2_000, 3_000, 4_000, 5_000, 6_000];
+
+        assert_eq!(slice_to_array_or_default::<_, 4>(slice1), [1, 2, 0, 0]);
+        assert_eq!(slice_to_array_or_default::<_, 4>(slice2), [10, 20, 30, 40]);
+        assert_eq!(
+            slice_to_array_or_default::<_, 4>(slice3),
+            [1_000, 2_000, 3_000, 4_000]
+        );
+    }
+}
