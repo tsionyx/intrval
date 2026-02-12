@@ -957,16 +957,26 @@ mod random_rounds {
     extern crate std;
     use std::collections::HashMap;
 
+    use ::rand::{rngs::StdRng, SeedableRng as _};
+
     use super::*;
 
     #[test]
     fn equal_probability_for_tie() {
         let space = half_unbounded_odd();
-        let mode = Mode::Nearest(TieBreakingMode::Random);
+        let mode = Mode::Nearest(TieBreakingMode::Random {
+            prob_upper: Probability::default(),
+        });
 
         let x = 100;
         let n = 1_000;
-        let results = (0..n).map(|_| space.round(&x, mode).unwrap());
+
+        // random fixed seed to preserve test results between identical runs
+        let mut rng = StdRng::seed_from_u64(13_015_868_539_724_329_586);
+        let results = (0..n).map(|_| {
+            let rng: &mut dyn RandRng = &mut rng;
+            space.round_with_rng(&x, mode, rng).unwrap()
+        });
 
         let mut distrib = HashMap::new();
         for res in results {
@@ -997,7 +1007,13 @@ mod random_rounds {
         let prec = 100;
         let x = 578;
         let n = 8_000;
-        let results = (0..n).map(|_| space.round(&x, mode).unwrap());
+
+        // random fixed seed to preserve test results between identical runs
+        let mut rng = StdRng::seed_from_u64(17_353_928_030_973_914_206);
+        let results = (0..n).map(|_| {
+            let rng: &mut dyn RandRng = &mut rng;
+            space.round_with_rng(&x, mode, rng).unwrap()
+        });
 
         let mut distrib = HashMap::new();
         for res in results {
@@ -1026,5 +1042,33 @@ mod random_rounds {
             expected_interval_upper.contains(&f_upper),
             "upper frequency {f_upper} not in {expected_interval_upper:?}"
         );
+    }
+
+    #[test]
+    fn nearest_mode_with_determined_tie_breaking() {
+        let n = 1_000;
+
+        let mode_always_upper = Mode::Nearest(TieBreakingMode::Random {
+            prob_upper: Probability::new(1.0),
+        });
+        let mode_always_lower = Mode::Nearest(TieBreakingMode::Random {
+            prob_upper: Probability::new(0.0),
+        });
+        for _ in 0..n {
+            assert_eq!(mode_always_upper.round(&105, (100, 110), None), 110);
+            assert_eq!(mode_always_lower.round(&105, (100, 110), None), 100);
+        }
+    }
+
+    #[test]
+    fn stochastic_with_equal_to_either_bound() {
+        let n = 1_000;
+
+        let mode = Mode::Stochastic;
+        for _ in 0..n {
+            assert_eq!(mode.round(&10.0, (9.0, 10.0), None), 10.0);
+            assert_eq!(mode.round(&9.0, (9.0, 10.0), None), 9.0);
+            assert_eq!(mode.round(&10.0, (10.0, 10.0), None), 10.0);
+        }
     }
 }

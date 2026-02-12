@@ -2,7 +2,10 @@ use core::{cmp::Ordering, ops::Sub};
 
 use crate::helper::{Pair, Zero};
 
-use super::rand::Distance;
+use super::rand::{Distance, RandRng};
+
+#[cfg(feature = "random")]
+use super::rand::{bernoulli_sample, Probability};
 
 /// Rounding modes supported by the rounding routines.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -21,7 +24,12 @@ pub enum Mode {
 }
 
 impl Mode {
-    pub(super) fn round<T>(self, point: &T, (nearest_lower, nearest_upper): Pair<T>) -> T
+    pub(super) fn round<T>(
+        self,
+        point: &T,
+        (nearest_lower, nearest_upper): Pair<T>,
+        rng: Option<&mut dyn RandRng>,
+    ) -> T
     where
         T: Zero + PartialOrd,
         for<'any> &'any T: Sub,
@@ -38,7 +46,7 @@ impl Mode {
                         Some(Ordering::Greater) => TieSelection::Left,
                         Some(Ordering::Equal) | None => {
                             // when the distances are equal, use the tie-breaking mode
-                            tie_mode.select((&nearest_lower, &nearest_upper))
+                            tie_mode.select((&nearest_lower, &nearest_upper), rng)
                         }
                     }
                 };
@@ -49,19 +57,18 @@ impl Mode {
             }
             #[cfg(feature = "random")]
             Self::Stochastic => {
-                let total: f64 = distance(&nearest_upper, &nearest_lower)
-                    .try_into()
-                    .unwrap_or(1.0);
-                let to_lower: f64 = distance(&nearest_lower, point).try_into().unwrap_or(0.0);
+                let total: Option<f64> = distance(&nearest_upper, &nearest_lower).try_into().ok();
+                let to_lower: Option<f64> = distance(&nearest_lower, point).try_into().ok();
 
                 // the closer (_less_ distance) to `lower`, the _lower_ the probability to pick `upper`
                 //
-                // Note: division by zero is safe here because clamping will handle it:
-                // - `+inf.clamp(0.0, 1.0)` -> `1.0`;
-                // - `-inf.clamp(0.0, 1.0)` -> `0.0`;
-                let prob_upper = (to_lower / total).clamp(0.0, 1.0);
+                // Note: division by zero is safe here because the +/- inf handled separately.
+                let prob_upper = Probability::new(
+                    total.and_then(|total| to_lower.map(|to_lower| to_lower / total)),
+                );
 
-                if rand::random_bool(prob_upper) {
+                let select_upper = bernoulli_sample(prob_upper.get_f64(), rng);
+                if select_upper {
                     nearest_upper
                 } else {
                     nearest_lower
@@ -138,8 +145,11 @@ impl DirectedMode {
                 match self.select((&nearest_lower, &nearest_upper)) {
                     Some(TieSelection::Left) => nearest_lower,
                     Some(TieSelection::Right) => nearest_upper,
-                    None => Mode::Nearest(TieBreakingMode::Directed(self))
-                        .round(point, (nearest_lower, nearest_upper)),
+                    None => Mode::Nearest(TieBreakingMode::Directed(self)).round(
+                        point,
+                        (nearest_lower, nearest_upper),
+                        None,
+                    ),
                 }
             }
             Self::TowardPositiveInfinity => nearest_upper,
@@ -205,8 +215,13 @@ pub enum TieBreakingMode {
     // Evenness(bool),
     //
     #[cfg(feature = "random")]
-    /// Pick between two values at random with equal probability `p=0.5`.
-    Random,
+    /// Pick between two values at random with the given probability:
+    /// - right with probability `p = prob_upper`.
+    /// - left with probability `q = 1 - prob_upper`;
+    Random {
+        /// Probability to pick the upper value.
+        prob_upper: Probability,
+    },
 }
 
 impl TieBreakingMode {
@@ -216,19 +231,25 @@ impl TieBreakingMode {
         TieSelection::Right
     }
 
-    fn select<T>(self, pair: Pair<&T>) -> TieSelection
+    #[allow(clippy::needless_pass_by_value)]
+    fn select<T>(self, pair: Pair<&T>, rng: Option<&mut dyn RandRng>) -> TieSelection
     where
         T: Zero + PartialOrd,
         for<'any> &'any T: Sub,
         for<'any> <&'any T as Sub>::Output: PartialOrd,
     {
+        #[cfg(not(feature = "random"))]
+        let _ = rng;
+
         match self {
             Self::Directed(dir_mode) => dir_mode
                 .select(pair)
                 .unwrap_or_else(|| self.last_resort_for_equidistant_to_zero()),
             #[cfg(feature = "random")]
-            Self::Random => {
-                if rand::random_bool(0.5) {
+            Self::Random { prob_upper } => {
+                let prob_upper = prob_upper.get_f64();
+                let select_upper = bernoulli_sample(prob_upper, rng);
+                if select_upper {
                     TieSelection::Right
                 } else {
                     TieSelection::Left
