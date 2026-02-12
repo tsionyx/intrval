@@ -1,4 +1,5 @@
 //! Routines to perform rounding operations on arbitrary numeric types.
+//! using discrete sets as the space of representable values.
 //!
 //! <https://en.wikipedia.org/wiki/Rounding>
 
@@ -33,6 +34,24 @@ where
 {
     /// Round the given point according to the specified [`Mode`].
     ///
+    ///
+    /// # Note (for the case where _feature = "random"_ enabled)
+    ///
+    /// Performing a rounding with one of the [random-based modes][Mode::is_stochastic]
+    /// will use the fallback RNG for any random choices.
+    /// This is `no-std` friendly but provides low-quality
+    /// and cryptographically insecure predetermined results.
+    /// It is recommended to set the environment variable `CONST_RANDOM_SEED=<RANDOM_STRING>`
+    /// at compile time (during `cargo build`) to get a better quality of randomness.
+    ///
+    /// Also be aware that the fallback RNG is global and shared across all callers/threads.
+    /// That means stochastic rounding results depend on cross-thread interleaving
+    /// and on prior uses elsewhere in the process, which can make behavior hard
+    /// to reproduce and tests order-dependent. If you experience any difficulties with this,
+    /// consider providing your own RNG (and call it with `round_with_rng` method instead)
+    /// or switch to one of the [deterministic rounding modes][Mode::is_deterministic].
+    ///
+    ///
     /// # Errors
     ///
     /// `Err(RoundError)` when the candidate points to round to returned by
@@ -54,8 +73,27 @@ where
     /// Round the given point according to the specified [`Mode`].
     ///
     /// Optional random number generator can be provided
-    /// (only valid for [stochastic rounding][Mode::Stochastic]
-    /// or [random tie-breaking][TieBreakingMode::Random]).
+    /// This method only makes sense for [stochastic rounding][Mode::Stochastic]
+    /// or [random tie-breaking][TieBreakingMode::Random] modes.
+    /// If you are using fully deterministic rounding modes, you should probably
+    /// use the [`Self::round`] instead.
+    ///
+    ///
+    /// # Note
+    ///
+    /// Performing a rounding with one of the [random-based modes][Mode::is_stochastic]
+    /// with `rng=None` will use the fallback [small rng][::rand::rngs::SmallRng] for any random choices.
+    /// This is `no-std` friendly but provides low-quality
+    /// and cryptographically insecure predetermined results.
+    /// It is recommended to set the environment variable `CONST_RANDOM_SEED=<RANDOM_STRING>`
+    /// at compile time (during `cargo build`) to get a better quality of randomness.
+    ///
+    /// Also be aware that the fallback RNG is global and shared across all callers/threads.
+    /// That means stochastic rounding results depend on cross-thread interleaving and on prior uses elsewhere in the process,
+    /// which can make behavior hard to reproduce and tests order-dependent.
+    /// If you experience any difficulties with this, consider providing your own RNG
+    /// or switch to one of the [deterministic rounding modes][Mode::is_deterministic].
+    ///
     ///
     /// # Errors
     ///

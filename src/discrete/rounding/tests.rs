@@ -1026,7 +1026,7 @@ mod random_rounds {
     extern crate std;
     use std::collections::HashMap;
 
-    use ::rand::{rngs::StdRng, SeedableRng as _};
+    use ::rand::{rngs::SmallRng, SeedableRng as _};
 
     use super::*;
 
@@ -1041,7 +1041,7 @@ mod random_rounds {
         let n = 1_000;
 
         // random fixed seed to preserve test results between identical runs
-        let mut rng = StdRng::seed_from_u64(13_015_868_539_724_329_586);
+        let mut rng = SmallRng::seed_from_u64(13_015_868_539_724_329_586);
         let results = (0..n).map(|_| {
             let rng: &mut dyn RandRng = &mut rng;
             space.round_with_rng(&x, mode, rng).unwrap()
@@ -1069,6 +1069,68 @@ mod random_rounds {
     }
 
     #[test]
+    /// This test uses the global implicit RNG (`DEFAULT_RNG`) to perform
+    /// genuinely stochastic rounding.
+    ///
+    /// Other tests in this module may call rounding with `rng = None` as well,
+    /// but only in deterministic configurations (probabilities 0 or 1), so
+    /// their results do not depend on the RNG state.
+    ///
+    /// For stochastic behavior like in this test, you have to ensure this is
+    /// the only test that relies on the shared `DEFAULT_RNG`; otherwise the
+    /// RNG (shared between threads) can advance its state non-deterministically
+    /// (from the point of view of a single thread) and test results may become
+    /// order-dependent, causing intermittent assertion failures.
+    fn global_rng_works() {
+        let space = half_unbounded_odd();
+        let prob_upper = 0.4;
+        let mode = Mode::Nearest(TieBreakingMode::Random {
+            prob_upper: Probability::new(prob_upper),
+        });
+
+        let x = 100;
+        let n = 1_000;
+
+        let results = (0..n).map(|_| space.round_with_rng(&x, mode, None).unwrap());
+
+        let mut distrib = HashMap::new();
+        for res in results {
+            *distrib.entry(res).or_insert(0_u16) += 1;
+        }
+
+        let f_lower = distrib.remove(&(x - 1)).unwrap();
+        let f_upper = distrib.remove(&(x + 1)).unwrap();
+        assert!(distrib.is_empty());
+
+        let (expected_lower, expected_upper) = {
+            #[allow(
+                clippy::as_conversions,
+                clippy::cast_possible_truncation,
+                clippy::cast_sign_loss
+            )]
+            (
+                (f64::from(n) * (1.0 - prob_upper)) as u16,
+                (f64::from(n) * prob_upper) as u16,
+            )
+        };
+
+        let max_allowed_deviation = n / 20; // ~sqrt(n)
+        let expected_interval_lower =
+            (expected_lower - max_allowed_deviation)..(expected_lower + max_allowed_deviation);
+        assert!(
+            expected_interval_lower.contains(&f_lower),
+            "lower frequency {f_lower} not in {expected_interval_lower:?}"
+        );
+
+        let expected_interval_upper =
+            (expected_upper - max_allowed_deviation)..(expected_upper + max_allowed_deviation);
+        assert!(
+            expected_interval_upper.contains(&f_upper),
+            "upper frequency {f_upper} not in {expected_interval_upper:?}"
+        );
+    }
+
+    #[test]
     fn stochastic() {
         let space = hundreds();
         let mode = Mode::Stochastic;
@@ -1078,7 +1140,7 @@ mod random_rounds {
         let n = 8_000;
 
         // random fixed seed to preserve test results between identical runs
-        let mut rng = StdRng::seed_from_u64(17_353_928_030_973_914_206);
+        let mut rng = SmallRng::seed_from_u64(17_353_928_030_973_914_206);
         let results = (0..n).map(|_| {
             let rng: &mut dyn RandRng = &mut rng;
             space.round_with_rng(&x, mode, rng).unwrap()

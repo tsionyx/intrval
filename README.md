@@ -241,6 +241,21 @@ Enables the support of `serde::{Serialize, Deserialize}` for `Interval<T>`.
 Enables the `proptest::Arbitrary` for `Interval<T>` along with the property tests
 (could be invoked with `cargo test prop_test --features=arbitrary`).
 
+
+### random
+
+Enables the ability to use _stochastic_ rounding (`discrete::rounding::Mode::Stochastic`)
+and _random tie-breaking_ (in the `discrete::rounding::Mode::Nearest`).
+
+This feature also enables the `Roundable::round_with_rng`
+to be able to provide a custom RNG (random number generator implementing `rand::RngCore`).
+If you do not provide an RNG (either calling `Roundable::round_with_rng` with `None`
+or calling `Roundable::round`) using any of the modes mentioned above,
+be aware that the default very simple RNG (`rand::SmallRng`) will be used.
+Its seed can be provided as a `CONST_RANDOM_SEED` environment variable **at compile time**
+(during `cargo build` or `cargo run`).
+
+
 ### singleton
 
 This feature is useful if you want to have a dedicated `Interval::Singleton`
