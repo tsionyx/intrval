@@ -208,7 +208,8 @@ pub mod sync {
     #[allow(unsafe_code)]
     // SAFETY: We ensure exclusive access through the `self.lock` atomic boolean,
     // and `T: Send` guarantees that the inner value may be safely accessed across
-    // threads even though `with_mut_spin_lock` can yield `&mut T` from `&self`.
+    // threads. The `with_mut_spin_lock` method requires `R: 'static` to prevent
+    // returning references to the inner value that could outlive the lock.
     unsafe impl<T: Send> Sync for OnceLock<T> {}
 
     #[cfg_attr(not(feature = "random"), allow(dead_code))]
@@ -223,10 +224,14 @@ pub mod sync {
 
         /// Execute a closure `f` with mutable access to the inner value of the [`OnceLock`],
         /// initializing it with another closure `init` if it has not been initialized yet.
+        ///
+        /// The return type `R` must be `'static` to prevent returning references
+        /// to the inner value that could outlive the lock's acquisition.
         pub fn with_mut_spin_lock<Init, F, R>(&self, f: F, init: Init) -> R
         where
             Init: FnOnce() -> T,
             F: FnOnce(&mut T) -> R,
+            R: 'static,
         {
             let guard = SpinLockGuard::acquire(&self.lock);
 
