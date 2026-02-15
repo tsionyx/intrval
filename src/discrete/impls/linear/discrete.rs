@@ -228,9 +228,32 @@ enum Direction {
     Up,
 }
 
+fn find_stepped<T>(x: T, origin: T, step: &T) -> T
+where
+    T: Clone + PartialOrd + MonotonicLinear + IntDiv,
+{
+    // try to reduce the number of possible steps
+    // and the risk of possible over/under-flows
+    // by finding a stepped version of point `zero` first,
+    // then use it as a new `origin` to find the stepped version of `x`
+    let zero_shortcut = x.clone().monotonic_sub(x.clone()).and_then(|zero| {
+        find_stepped_inner(zero, origin.clone(), step)
+            .and_then(|stepped_zero| find_stepped_inner(x.clone(), stepped_zero, step))
+            .ok()
+    });
+
+    zero_shortcut
+        .unwrap_or_else(|| find_stepped_inner(x, origin, step).unwrap_or_else(|origin| origin))
+}
+
 /// Find the point close to `x`, starting from `origin`
 /// on a distance of integer number of `step`-s.
-fn find_stepped<T>(x: T, origin: T, step: &T) -> T
+///
+/// # Errors
+///
+/// Return the `Err(origin)` as the last resort
+/// when the operations to find the stepped point overflowed.
+fn find_stepped_inner<T>(x: T, origin: T, step: &T) -> Result<T, T>
 where
     T: Clone + PartialOrd + MonotonicLinear + IntDiv,
 {
@@ -250,7 +273,7 @@ where
                 additional_steps += 1;
             } else {
                 // if subtracting a `step` from `x` overflowed, we can just return the `origin`
-                return origin;
+                return Err(origin);
             }
         } else {
             let dist = origin.clone().monotonic_sub(x.clone());
@@ -264,7 +287,7 @@ where
                 additional_steps += 1;
             } else {
                 // if summing a `step` to `x` overflowed, we can just return the `origin`
-                return origin;
+                return Err(origin);
             }
         }
     };
@@ -296,7 +319,7 @@ where
             x
         })
     }
-    .unwrap_or(origin)
+    .ok_or(origin)
 }
 
 /// Find the point starting from `start` and moving in `step` increments/decrements
