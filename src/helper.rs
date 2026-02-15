@@ -115,6 +115,30 @@ impl<T> OneOrPair<T> {
             Self::Pair(v) => Ok(v),
         }
     }
+
+    /// Apply one of the functions:
+    /// - `f1` with a single value argument if `self` is the [`OneOrPair::One`],
+    /// - `f2` to the two arguments if `self` is the [`OneOrPair::Pair`].
+    pub fn fold<F1, F2, R>(self, f1: F1, f2: F2) -> R
+    where
+        F1: FnOnce(T) -> R,
+        F2: FnOnce(T, T) -> R,
+    {
+        match self {
+            Self::One(v) => f1(v),
+            Self::Pair((v1, v2)) => f2(v1, v2),
+        }
+    }
+
+    /// Unwrap the single value if `self` is the [`OneOrPair::One`],
+    /// otherwise fold the pair of values into a single one using the provided function.
+    pub fn single_or_fold<F>(self, f: F) -> T
+    where
+        F: FnOnce(T, T) -> T,
+    {
+        use core::convert::identity;
+        self.fold(identity, f)
+    }
 }
 
 impl<T> TryInto<Pair<T>> for OneOrPair<T> {

@@ -256,14 +256,12 @@ mod prop_test {
 
         #[test]
         fn contains_reversed_with_complement(range: Interval<Int>, x in params_range()) {
-            use crate::OneOrPair;
-
             let contains_in_original = range.contains(&x);
             let complement = !range;
-            let contains_in_complement = match complement {
-                OneOrPair::One(interval) => interval.contains(&x),
-                OneOrPair::Pair((a, b)) => a.contains(&x) || b.contains(&x),
-            };
+            let contains_in_complement = complement.fold(
+                |interval| interval.contains(&x),
+                |a, b| a.contains(&x) || b.contains(&x),
+            );
             prop_assert_eq!(contains_in_original, !contains_in_complement);
         }
 
