@@ -23,11 +23,11 @@ it contains **every value** between the given bounds.
 
 ### macro syntax
 
-Allows to simplify the defintions of an interval
+Allows to simplify the definitions of an interval
 in common inequality and ranges terms.
 
 For the half-open intervals, the inclusive bound is marked with `=` symbol; 
-for the closed interval both `[a, b]` and `(=a, =b)` defintions are possible.
+for the closed interval both `[a, b]` and `(=a, =b)` definitions are possible.
 
 ```rust
 # use intrval::{interval, Interval};
@@ -224,6 +224,157 @@ assert_eq!((interval!(0) | igt2).into_single().unwrap(), igt2);
 assert_eq!((igt2 | interval!(0)).into_single().unwrap(), igt2);
 
 assert_eq!(interval!([-2, 10]).enclosure(igt10 * 2), interval!(>= -2));
+```
+
+
+## Discrete intervals
+
+`LinearSpace` is an `Interval` combined with the notion of `step` to
+represent discrete space of points.
+
+### constructors (injectors) and getters (projectors)
+
+Create and deconstruct discrete intervals.
+
+```rust
+# use intrval::{discrete::LinearSpace, interval};
+
+let space = LinearSpace::try_bounded(interval!([-2, 10]), 3_i8).unwrap();
+assert_eq!(space.bounds(), &interval!([-2, 10]));
+assert_eq!(space.step(), &3);
+assert_eq!(space.into_parts(), (interval!([-2, 10]), 3));
+assert_eq!(
+    space.map(|x| x * 2).unwrap().into_parts(),
+    (interval!([-4, 20]), 6)
+);
+
+let space = LinearSpace::try_new(10_i8).unwrap();
+assert_eq!(space.bounds(), &interval!(U));
+assert_eq!(space.step(), &10);
+assert_eq!(space.into_parts(), (interval!(U), 10));
+assert_eq!(
+    space.map(|x| x + 2).unwrap().into_parts(),
+    (interval!(U), 12)
+);
+assert!(space.map(|x| x - 10).is_none());
+```
+
+### arithmetic operations
+
+Modify the space by doing some simple operations
+using underlying `Interval` implementations.
+
+```rust
+# use intrval::{discrete::LinearSpace, interval};
+
+let space = LinearSpace::try_bounded(interval!((20, =142)), 10_u16).unwrap();
+
+// `Shl` and `Shr` (forwarded to underlying `Interval`, without changing the `step`)
+assert_eq!((space >> 5).into_parts(), (interval!((25, =147)), 10));
+assert_eq!((space << 20).into_parts(), (interval!((0, =122)), 10));
+
+// `Mul`/`Div` by scalar to extend/shrink the `Interval` along with the `step`
+assert_eq!(
+    (space * 10).unwrap().into_parts(),
+    (interval!((200, =1420)), 100)
+);
+assert_eq!((space / 3).unwrap().into_parts(), (interval!((6, =47)), 3));
+
+// `Mul` by another `LinearSpace`
+let space2 = LinearSpace::try_bounded(interval!([5, 10]), 3).unwrap();
+assert_eq!((space * space2).into_parts(), (interval!((100, =1420)), 30));
+```
+
+
+### iterators
+
+Convert a space into forward and backward iterators.
+
+```rust
+# use intrval::{discrete::LinearSpace, interval};
+
+let space = LinearSpace::try_bounded(interval!((20, =80)), 10_u16).unwrap();
+assert_eq!(
+    space.try_into_forward_iter().unwrap().collect::<Vec<_>>(),
+    [30, 40, 50, 60, 70, 80]
+);
+assert_eq!(
+    space.into_forward_iter_from(65).collect::<Vec<_>>(),
+    [70, 80]
+);
+
+let space_unbounded_lower = LinearSpace::try_bounded(interval!(<= 20), 5_u8).unwrap();
+let _err = space_unbounded_lower.try_into_forward_iter().unwrap_err();
+assert_eq!(
+    space_unbounded_lower
+        .into_forward_iter_from(8)
+        .collect::<Vec<_>>(),
+    [10, 15, 20]
+);
+
+assert_eq!(
+    space.try_into_backward_iter().unwrap().collect::<Vec<_>>(),
+    [80, 70, 60, 50, 40, 30]
+);
+assert_eq!(
+    space.into_backward_iter_up_to(42).collect::<Vec<_>>(),
+    [40, 30]
+);
+
+let space_unbounded_upper = LinearSpace::try_bounded(interval!(> 100), 5_u8).unwrap();
+let _err = space_unbounded_upper.try_into_backward_iter().unwrap_err();
+assert_eq!(
+    space_unbounded_upper
+        .into_backward_iter_up_to(127)
+        .collect::<Vec<_>>(),
+    [125, 120, 115, 110, 105]
+);
+```
+
+### rounding
+
+Round (using `Roundable` trait) a `point: T` to the values of the space.
+
+```rust
+# use intrval::{
+#     discrete::{
+#         rounding::{DirectedMode, Mode, RoundError, Roundable as _},
+#         LinearSpace,
+#     },
+#     interval,
+# };
+
+let space = LinearSpace::try_bounded(interval!(> 100), 4_u8).unwrap();
+
+assert_eq!(space.round(&102, DirectedMode::UP).unwrap(), 104);
+assert_eq!(space.round(&117, DirectedMode::DOWN).unwrap(), 116);
+assert_eq!(
+    space.round(&253, DirectedMode::AwayFromZero).unwrap_err(),
+    RoundError::InvalidDirection {
+        rounded: 252,
+        direction: DirectedMode::AwayFromZero
+    }
+);
+assert_eq!(
+    space
+        .round(&142, Mode::Nearest(DirectedMode::DOWN.into()))
+        .unwrap(),
+    140,
+);
+
+#[cfg(feature = "random")]
+{
+    let rounded = space
+        .round_with_rng(
+            &141,
+            Mode::Stochastic,
+            // you should provide an optional RNG for the stable results,
+            // see the caveats of using fallback RNG in docs for `round_with_rng` method.
+            None,
+        )
+        .unwrap();
+    assert!([140, 144].contains(&rounded));
+}
 ```
 
 

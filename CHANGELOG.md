@@ -5,6 +5,85 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [Unreleased]
+
+## Added
+
+- `Interval`'s shifting operations as aliases for arithmetic operations:
+  `core::ops::Shl(Shr)` based on `Sub(Add)` and can be thought as shifting
+  both of interval's bounds to the left(right) along a rational line
+  (i.e. subtracting(adding) some offset from(to) both bounds);
+
+- fine-grained hierarchy of numeric traits:
+  - `Zero` (blanket impl for `TryFrom<u8> + PartialOrd`);
+  - `Measure` (`Add & Sub`), blanket impl for types _closed under those ops_;
+    - `Linear` (+ `Mul & Div` by scalar),
+      blanket impl for `Measure`-d types with `Mul` and `Div` defined;
+      - `MonotonicLinear` (`Add & Sub` are guaranteed to be monotonic),
+        impl for _core numeric types_
+        (`checked_{add,sub}` for integers, manual check for floating);
+  - `IntDiv` (`Div` with the ability to round a quotient to integer),
+    impl for _core numeric types_
+    (identity quotient for integers, truncated quotient for floating);
+
+
+### Discrete sets
+
+- `DiscreteOrdSet` trait to define a generic _discrete_ set of given `Point`-s
+  - `LinearSpace` as the implementor of `DiscreteOrdSet` representing
+    an `Interval` with a `step > 0` defined.
+    Some additional behaviour also included:
+    - constructors:
+      - `try_bounded(bounds, step)` with the `Interval` provided;
+      - `try_new(step)` with the implicit `Interval::Full` provided;
+    - getters and projectors:
+      - `bounds()`;
+      - `step()`;
+      - `into_parts()`;
+      - `map(f)`;
+    - arithmetic operations:
+      - `Shl` and `Shr` (forwarded to underlying `Interval`,
+        without changing the `step`);
+      - `Mul/Div` by scalar to extend/shrink the `Interval` along with the `step`;
+      - `Mul` by another `LinearSpace`;
+    - conversions into _forward_ and _backward_ iterators:
+      - `try_into_forward_iter()`;
+      - `into_forward_iter_from(start)`;
+      - `try_into_backward_iter()`;
+      - `into_backward_iter_up_to(end)`;
+
+- `Roundable` as an extension of `DiscreteOrdSet` to allow
+  an arbitrary point `T` to be rounded using one of the rounding modes
+  to one of the discrete points defined by `DiscreteOrdSet`;
+  - `random` feature to enable some _stochastic_ modes;
+    - `rand` dependency with `SmallRng` as a fallback (used while
+      performing rounding using one of the _stochastic_ modes provided **no _RNG_** is available);
+      - `CONST_RANDOM_SEED` environment variable can be used during `cargo build`
+        to set a custom seed for the default RNG;
+  - `ordered-float` dependency to test rounding on `LinearSpace` with ordered floating-point numbers;
+
+
+### Helpers
+
+- `OneOrPair::{fold,single_or_fold}` to transform it into a value;
+- `ValOrInf` (isomorphic to `Option`) to extend an arbitrary type with the `Infinite` notion;
+- `slice_to_array_*` conversions to get an array `[T; N]` from the slice `&[T]`;
+- `OnceLock`, a very basic primitive for performing mutable operations on shared global data in `no-std` mode.
+
+  The possible problems of using a global state behind this `OnceLock` include:
+  1. No fairness guarantee: A thread spinning on the lock could starve other threads indefinitely.
+  2. Priority inversion: On systems with thread priorities, a low-priority thread holding the lock can block high-priority threads.
+  3. Performance on single-core systems: Spinning wastes CPU cycles when only one thread can make progress.
+
+
+## Changed
+
+- `proptest` library with `default-features=false`,
+  using `features = ["std"]` only for tests (in `dev-dependencies`);
+
+- loosened the level of `unsafe_code` lint to `deny` to implement `OnceLock` (see above);
+
+
 
 # [0.1.2] - 2026-02-10
 
@@ -50,7 +129,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - split the `Bounded` trait into hierarchy of traits:
   - `IntoBounds` to define only conversion to a pair of `Endpoint`-s;
     - this reduction allows to implement it for `&Interval<T>`,
-      improving ergonomic (skipping some `.as_ref()` calls);
+      improving ergonomics (skipping some `.as_ref()` calls);
   - `Bounded<T>`:
     - adds the `.from_bounds()`
     - removes the requirement `type Error: Into<Self>`;
@@ -71,8 +150,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `.is_super(&self, other: impl IntoBounds<&T>)`
       (previously named `Interval::contains_other`);
 
-- `Interval::point_cmp` to answer whether a point `T`
-  lies to the right/left of the `Interval<T>`.
+- `Interval::point_cmp` to determine whether a point `T`
+  lies to the right or left of the `Interval<T>`.
   The signature of the method matches the `PartialOrd::<T>::partial_cmp`,
   but implementing the latter would result in poor ergonomics
   in other parts of the codebase.
@@ -137,24 +216,24 @@ Represent a subset of single-dimensioned ordered set bounded by at most 2 points
 
 - set operations:
   - `complement` (aliased with `Not` (`!`) operator);
-  - `contains` to check the `Interval` contains a given point;
-  - `contains_other` to check for fully-containness of another `Interval`;
+  - `contains` to check whether the `Interval` contains a given point;
+  - `contains_other` to check whether another `Interval` is fully contained within `self`;
   - via `Bounded` trait: 
     - `intersect` (aliased with `BitAnd` (`&`) operator);
     - `union` (aliased with `BitOr` (`|`) operator);
     - `enclosure`;
 
 - other methods:
-  - `is_empty` to check whether an interval contain no points;
-  - `is_full` to check whether an interval contain all possible points (_universe_);
-  - `len` to get a measure of an interval (as the `Size<Diff<T>>` type);
+  - `is_empty` to check whether the `Interval` contains no points;
+  - `is_full` to check whether the `Interval` contains all possible points (_universe_);
+  - `len` to get a measure of the `Interval` (as the `Size<Diff<T>>` type);
   - `clamp` to force the given point to fall into the `Interval`;
   
   - `as_ref` to represent the borrowed version `Interval<&T>`
     (useful in many methods to avoid cloning doing `Interval::into_bounds`);
   - `map` to convert to another `Interval<U>` given transformation function
     `Fn(T) -> (U)`;
-  - `reduce` to simplify the defintion of an `Interval` to the equivalent one:
+  - `reduce` to simplify the definition of an `Interval` to the equivalent one:
     - the _empty_ reduced to the `Interval::Empty`;
     - the _singleton_ (_degenerate_) interval `[x, x]` reduced to `Interval::Singleton(x)`
       (if the _singleton_ feature enabled);
