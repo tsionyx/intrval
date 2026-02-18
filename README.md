@@ -15,7 +15,13 @@ and sets (_union_, _intersect_, _complement_) operations support.
 Its main structure is an `Interval` which represents
 a single-dimensioned (possibly unbounded) span of values instantiated by any type `T`.
 
-## macro syntax
+## Continuous intervals
+
+If the underlying type `T` is discrete like one of the integer types,
+the `Interval` is not really _continuous_, but we still consider
+it contains **every value** between the given bounds.
+
+### macro syntax
 
 Allows to simplify the defintions of an interval
 in common inequality and ranges terms.
@@ -24,7 +30,7 @@ For the half-open intervals, the inclusive bound is marked with `=` symbol;
 for the closed interval both `[a, b]` and `(=a, =b)` defintions are possible.
 
 ```rust
-use intrval::{interval, Interval};
+# use intrval::{interval, Interval};
 
 let i0: Interval<i16> = interval!(0);
 assert_eq!(i0, Interval::Empty);
@@ -45,11 +51,14 @@ let iuni: Interval<i16> = interval!(U);
 assert_eq!(iuni, Interval::Full);
 ```
 
-## common functions
+### common functions
+
+Functions not falling into _arithmetic_ or _set_ categories,
+but still common for all intervals.
 
 ```rust
-use core::cmp::Ordering;
-use intrval::{interval, Size};
+# use core::cmp::Ordering;
+# use intrval::{interval, Size};
 
 assert!(interval!(0: i32).is_empty());
 assert!(interval!((1, 0)).is_empty());
@@ -75,13 +84,13 @@ assert_eq!(i_left_open.clamp(2).unwrap(), (Ordering::Greater, 2));
 assert_eq!(i_left_open.clamp(0).unwrap(), (Ordering::Greater, 2));
 ```
 
-## scalar arithmetic
+### scalar arithmetic
 
 Add, subtract or multiply the interval bounds with a scalar value of type `U`
-if the underlying type `T: {Add, Sub, Mult}<U>`:
+if the underlying type `T: {Add, Sub, Mul}<U>`.
 
 ```rust
-use intrval::{interval, Interval};
+# use intrval::{interval, Interval};
 
 // negation changes the sign and flips the bounds
 assert_eq!(-interval!(> 2), interval!(< -2));
@@ -104,14 +113,14 @@ assert_eq!(interval!([-2, 10]) * -4, interval!([-40, 8]));
 assert_eq!(interval!([16, 79]) / -8, Interval::Closed((-9, -2)));
 ```
 
-## interval arithmetic
+### interval arithmetic
 
 Add, subtract or multiply an `Interval<T>` with an `Interval<U>`
 to produce another `Interval<Z>`
-if the underlying type `T: {Add, Sub, Mult}<U, Output=Z>`:
+if the underlying type `T: {Add, Sub, Mul}<U, Output=Z>`.
 
 ```rust
-use intrval::interval;
+# use intrval::interval;
 
 let i0 = interval!(0: i32);
 let igt10 = interval!(> 10);
@@ -120,14 +129,14 @@ let i5to20_excl = interval!((5, =20));
 let iuni = interval!(U: i32);
 
 assert_eq!(igt10 + i_2to10_incl, interval!(> 8));
-// adding empty does not change the proper one
+// adding an empty interval one does not change the proper one
 assert_eq!(igt10 + interval!((1, 0)), igt10);
 assert_eq!(interval!((1, 0)) + igt10, igt10);
 
 assert_eq!(i_2to10_incl - i5to20_excl, interval!((=-22, 5)));
-// subtracting empty does not change the proper one
+// subtracting an empty interval does not change the proper one
 assert_eq!(igt10 - interval!((1, 0)), igt10);
-// subtracting _from_ empty negates the proper one
+// subtracting _from_ an empty interval negates the proper one
 assert_eq!(interval!((2, 0)) - i_2to10_incl, -i_2to10_incl);
 
 // Interval::Empty is neutral over multiplication
@@ -141,10 +150,13 @@ assert_eq!(igt10 * i5to20_excl, interval!(> 50));
 assert_eq!(i5to20_excl * iuni, iuni);
 ```
 
-## set operations
+### set operations
+
+Representation of an `Interval`-s as a sets of points
+allows to apply various set operations on them.
 
 ```rust
-use intrval::{interval, SetOps as _};
+# use intrval::{interval, SetOps as _};
 
 let igt2 = interval!(> 2);
 let igt_e2 = interval!(>= 2);

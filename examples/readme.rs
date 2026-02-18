@@ -1,12 +1,22 @@
 //! The example below demonstrates the basic usage of the `intrval` crate.
 #![allow(clippy::unwrap_used)]
 
-use core::cmp::Ordering;
-
-use intrval::{interval, Interval, SetOps as _, Size};
-
-#[allow(clippy::cognitive_complexity, clippy::too_many_lines)]
 fn main() {
+    macro_syntax();
+    common_functions();
+    scalar_arithmetic();
+    interval_arithmetic();
+    set_operations();
+}
+
+/// Allows to simplify the definitions of an interval
+/// in common inequality and ranges terms.
+///
+/// For the half-open intervals, the inclusive bound is marked with `=` symbol;
+/// for the closed interval both `[a, b]` and `(=a, =b)` definitions are possible.
+fn macro_syntax() {
+    use intrval::{interval, Interval};
+
     let i0: Interval<i16> = interval!(0);
     assert_eq!(i0, Interval::Empty);
 
@@ -24,8 +34,14 @@ fn main() {
 
     let iuni: Interval<i16> = interval!(U);
     assert_eq!(iuni, Interval::Full);
+}
 
-    // ===== common functions =====
+/// Functions not falling into _arithmetic_ or _set_ categories,
+/// but still common for all intervals.
+fn common_functions() {
+    use core::cmp::Ordering;
+    use intrval::{interval, Size};
+
     assert!(interval!(0: i32).is_empty());
     assert!(interval!((1, 0)).is_empty());
     assert!(interval!((0, 0)).is_empty());
@@ -48,8 +64,13 @@ fn main() {
     assert_eq!(i_left_open.clamp(3).unwrap(), (Ordering::Equal, 3));
     assert_eq!(i_left_open.clamp(2).unwrap(), (Ordering::Greater, 2));
     assert_eq!(i_left_open.clamp(0).unwrap(), (Ordering::Greater, 2));
+}
 
-    // ===== scalar arithmetic =====
+/// Add, subtract or multiply the interval bounds with a scalar value of type `U`
+/// if the underlying type `T: {Add, Sub, Mul}<U>`.
+fn scalar_arithmetic() {
+    use intrval::{interval, Interval};
+
     // negation changes the sign and flips the bounds
     assert_eq!(-interval!(> 2), interval!(< -2));
     assert_eq!(-interval!([-2, 10]), interval!([-10, 2]));
@@ -72,8 +93,14 @@ fn main() {
     // multiplying/dividing by negative flips the bounds
     assert_eq!(interval!([-2, 10]) * -4, interval!([-40, 8]));
     assert_eq!(interval!([16, 79]) / -8, Interval::Closed((-9, -2)));
+}
 
-    // ===== interval arithmetic =====
+/// Add, subtract or multiply an `Interval<T>` with an `Interval<U>`
+/// to produce another `Interval<Z>`
+/// if the underlying type `T: {Add, Sub, Mul}<U, Output=Z>`.
+fn interval_arithmetic() {
+    use intrval::interval;
+
     let i0 = interval!(0: i32);
     let igt10 = interval!(> 10);
     let i_2to10_incl = interval!([-2, 10]);
@@ -81,14 +108,14 @@ fn main() {
     let iuni = interval!(U: i32);
 
     assert_eq!(igt10 + i_2to10_incl, interval!(> 8));
-    // adding empty does not change the proper one
+    // adding an empty interval one does not change the proper one
     assert_eq!(igt10 + interval!((1, 0)), igt10);
     assert_eq!(interval!((1, 0)) + igt10, igt10);
 
     assert_eq!(i_2to10_incl - i5to20_excl, interval!((=-22, 5)));
-    // subtracting empty does not change the proper one
+    // subtracting an empty interval does not change the proper one
     assert_eq!(igt10 - interval!((1, 0)), igt10);
-    // subtracting _from_ empty negates the proper one
+    // subtracting _from_ an empty interval negates the proper one
     assert_eq!(interval!((2, 0)) - i_2to10_incl, -i_2to10_incl);
 
     // Interval::Empty is neutral over multiplication
@@ -100,8 +127,13 @@ fn main() {
     assert_eq!(igt10 * i5to20_excl, interval!(> 50));
     // Interval::Full is neutral over multiplication
     assert_eq!(i5to20_excl * iuni, iuni);
+}
 
-    // ===== set operations =====
+/// Representation of an `Interval`-s as a sets of points
+/// allows to apply various set operations on them.
+fn set_operations() {
+    use intrval::{interval, SetOps as _};
+
     let igt2 = interval!(> 2);
     let igt_e2 = interval!(>= 2);
     let igt10 = interval!(> 10);
