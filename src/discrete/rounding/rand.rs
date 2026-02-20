@@ -1,111 +1,143 @@
 //! Implementation details dependent on the `random` feature,
 //! which is used to support stochastic rounding.
 
-impl super::Mode {
-    #[must_use]
-    #[cfg(feature = "random")]
-    /// Check if the rounding mode is stochastic (i.e., involves random choices).
-    pub const fn is_stochastic(&self) -> bool {
-        matches!(
-            self,
-            Self::Stochastic | Self::Nearest(super::TieBreakingMode::Random { .. }),
-        )
-    }
+use core::ops::Sub;
 
-    #[must_use]
-    #[cfg(not(feature = "random"))]
-    /// Check if the rounding mode is stochastic (i.e., involves random choices).
-    pub const fn is_stochastic(&self) -> bool {
-        false
-    }
+use crate::{
+    helper::{OneOrPair, Pair},
+    traits::Zero,
+};
 
-    #[must_use]
-    /// Check if the rounding mode is deterministic (i.e., does not involve random choices).
-    pub const fn is_deterministic(&self) -> bool {
-        !self.is_stochastic()
-    }
-}
+use super::{distance, modes::TieBreaking, RoundError, RoundingMode, TieSelection};
 
-#[cfg(feature = "random")]
 pub use rand::RngCore as RandRng;
 
-#[cfg(not(feature = "random"))]
-/// Dummy trait when the `random` feature is disabled.
-pub trait RandRng {}
+/// Stochastic rounding, picking between two nearest values
+/// with probability proportional to their distance from the original value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StochasticMode;
 
-#[cfg(not(feature = "random"))]
-/// When the `random` feature is disabled, we only require `PartialOrd`.
-pub trait Distance: PartialOrd {}
-#[cfg(not(feature = "random"))]
-impl<T> Distance for T where T: PartialOrd {}
+impl<T> RoundingMode<T> for StochasticMode
+where
+    T: Zero + PartialOrd,
+    for<'any> &'any T: Sub,
+    for<'any> <&'any T as Sub>::Output: TryInto<f64>,
+{
+    fn round(
+        &self,
+        point: &T,
+        nearest: OneOrPair<T>,
+        rng: Option<&mut dyn RandRng>,
+    ) -> Result<T, RoundError<T>> {
+        Ok(nearest.single_or_fold(|nearest_lower, nearest_upper| {
+            let total: Option<f64> = distance(&nearest_upper, &nearest_lower).try_into().ok();
+            let to_lower: Option<f64> = distance(&nearest_lower, point).try_into().ok();
 
-#[cfg(feature = "random")]
-/// When the `random` feature is enabled, we require additional traits
-/// to support stochastic rounding using the distances,
-pub trait Distance: PartialOrd + TryInto<f64> {}
-#[cfg(feature = "random")]
-impl<T> Distance for T where T: PartialOrd + TryInto<f64> {}
+            // the closer (_less_ distance) to `lower`, the _lower_ the probability to pick `upper`
+            //
+            // Note: division by zero is safe here because the +/- inf handled separately.
+            let prob_upper =
+                Probability::new(total.and_then(|total| to_lower.map(|to_lower| to_lower / total)));
 
-#[cfg(feature = "random")]
-pub use self::prob::Probability;
-
-#[cfg(feature = "random")]
-mod prob {
-    #[derive(Debug, Copy, Clone)]
-    /// A newtype wrapping an (optional) f64 value denoting probability.
-    pub struct Probability {
-        value: Option<f64>,
-    }
-
-    #[cfg(feature = "random")]
-    impl Probability {
-        /// Create a new `Probability` with the given value.
-        ///
-        /// The value, if `Some`, will be clamped into `[0, 1]` interval.
-        /// It defaults to `0.5` (if `None`) for uniform distribution.
-        pub fn new(value: impl Into<Option<f64>>) -> Self {
-            Self {
-                value: value.into(),
+            let select_upper = bernoulli_sample(prob_upper.get_f64(), rng);
+            if select_upper {
+                nearest_upper
+            } else {
+                nearest_lower
             }
-        }
-
-        const UNIFORM_CHOICE_PROB: f64 = 0.5;
-
-        #[must_use]
-        /// Get the normalized probability value.
-        ///
-        /// If the original value is `None` or not finite, it defaults to `0.5` for uniform distribution.
-        /// Otherwise, it is clamped into the range `[0, 1]`.
-        pub fn get_f64(&self) -> f64 {
-            self.value
-                .filter(|p| p.is_finite())
-                .map_or(Self::UNIFORM_CHOICE_PROB, |p| p.clamp(0.0, 1.0))
-        }
+        }))
     }
 
-    impl Default for Probability {
-        fn default() -> Self {
-            Self::new(None)
-        }
-    }
-
-    // ---- manual PartialEq and Eq implementations to deal with `f64: !Eq` ---
-    impl PartialEq for Probability {
-        fn eq(&self, other: &Self) -> bool {
-            self.get_f64().total_cmp(&other.get_f64()).is_eq()
-        }
-    }
-
-    impl Eq for Probability {}
-
-    impl From<Option<f64>> for Probability {
-        fn from(value: Option<f64>) -> Self {
-            Self::new(value)
-        }
+    fn is_stochastic(&self) -> bool {
+        true
     }
 }
 
-#[cfg(feature = "random")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Pick between two values at random with the given probability:
+/// - right with probability `p = prob_upper`.
+/// - left with probability `q = 1 - prob_upper`;
+pub struct RandomTie {
+    /// Probability to pick the upper value.
+    pub prob_upper: Probability,
+}
+
+impl<T> TieBreaking<T> for RandomTie {
+    fn select_opt(&self, _: Pair<&T>, rng: Option<&mut dyn RandRng>) -> Option<TieSelection> {
+        let prob_upper = self.prob_upper.get_f64();
+        let select_upper = bernoulli_sample(prob_upper, rng);
+        Some(if select_upper {
+            TieSelection::Right
+        } else {
+            TieSelection::Left
+        })
+    }
+
+    fn last_resort(&self) -> TieSelection {
+        if self.prob_upper.get_f64() >= 0.5 {
+            TieSelection::Right
+        } else {
+            TieSelection::Left
+        }
+    }
+
+    fn is_stochastic(&self) -> bool {
+        true
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+/// A newtype wrapping an (optional) f64 value denoting probability.
+pub struct Probability {
+    value: Option<f64>,
+}
+
+impl Probability {
+    /// Create a new `Probability` with the given value.
+    ///
+    /// The value, if `Some`, will be clamped into `[0, 1]` interval.
+    /// It defaults to `0.5` (if `None`) for uniform distribution.
+    pub fn new(value: impl Into<Option<f64>>) -> Self {
+        Self {
+            value: value.into(),
+        }
+    }
+
+    const UNIFORM_CHOICE_PROB: f64 = 0.5;
+
+    #[must_use]
+    /// Get the normalized probability value.
+    ///
+    /// If the original value is `None` or not finite, it defaults to `0.5` for uniform distribution.
+    /// Otherwise, it is clamped into the range `[0, 1]`.
+    pub fn get_f64(&self) -> f64 {
+        self.value
+            .filter(|p| p.is_finite())
+            .map_or(Self::UNIFORM_CHOICE_PROB, |p| p.clamp(0.0, 1.0))
+    }
+}
+
+impl Default for Probability {
+    fn default() -> Self {
+        Self::new(None)
+    }
+}
+
+// ---- manual PartialEq and Eq implementations to deal with `f64: !Eq` ---
+impl PartialEq for Probability {
+    fn eq(&self, other: &Self) -> bool {
+        self.get_f64().total_cmp(&other.get_f64()).is_eq()
+    }
+}
+
+impl Eq for Probability {}
+
+impl From<Option<f64>> for Probability {
+    fn from(value: Option<f64>) -> Self {
+        Self::new(value)
+    }
+}
+
 /// Obtain a Bernoulli outcome with the probability of `p`.
 /// If the RNG is not provided, use the global RNG.
 ///
@@ -125,7 +157,6 @@ pub fn bernoulli_sample(p: f64, rng: Option<&mut dyn RandRng>) -> bool {
     }
 }
 
-#[cfg(feature = "random")]
 mod fallback_rng {
     use rand::{rngs::SmallRng, SeedableRng as _};
 

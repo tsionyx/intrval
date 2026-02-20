@@ -13,31 +13,35 @@ use crate::{
 use super::DiscreteOrdSet;
 
 mod modes;
+#[cfg(feature = "random")]
 mod rand;
+#[cfg(not(feature = "random"))]
+mod rand {
+    /// Dummy trait when the `random` feature is disabled.
+    pub trait RandRng {}
+}
+
 #[cfg(test)]
 mod tests;
 
-use self::rand::RandRng;
+pub use self::rand::RandRng;
 
-pub use self::{
-    modes::{DirectedMode, Mode, TieBreakingMode},
-    rand::Distance,
-};
+pub use self::modes::{DirectedMode, NearestMode};
 
 #[cfg(feature = "random")]
-pub use self::rand::Probability;
+pub use self::rand::{Probability, RandomTie, StochasticMode};
 
 /// Extend the [`DiscreteOrdSet`] to support rounding.
 pub trait Roundable: DiscreteOrdSet
 where
     Self::Point: Zero + Ord,
 {
-    /// Round the given point according to the specified [`Mode`].
+    /// Round the given point according to the specified [`RoundingMode`].
     ///
     ///
     /// # Note (for the case where _feature = "random"_ enabled)
     ///
-    /// Performing a rounding with one of the [random-based modes][Mode::is_stochastic]
+    /// Performing a rounding with one of the [random-based modes][RoundingMode::is_stochastic]
     /// will use the fallback RNG for any random choices.
     /// This is `no-std` friendly but provides low-quality
     /// and cryptographically insecure predetermined results.
@@ -49,7 +53,7 @@ where
     /// and on prior uses elsewhere in the process, which can make behavior hard
     /// to reproduce and tests order-dependent. If you experience any difficulties with this,
     /// consider providing your own RNG (and call it with `round_with_rng` method instead)
-    /// or switch to one of the [deterministic rounding modes][Mode::is_deterministic].
+    /// or switch to one of the [deterministic modes][RoundingMode::is_deterministic].
     ///
     ///
     /// # Errors
@@ -59,29 +63,25 @@ where
     fn round(
         &self,
         point: &Self::Point,
-        mode: impl Into<Mode>,
-    ) -> Result<Self::Point, RoundError<Self::Point>>
-    where
-        for<'any> &'any Self::Point: Sub,
-        for<'any> <&'any Self::Point as Sub>::Output: Distance,
-    {
-        round(self, point, mode.into(), None)
+        mode: impl RoundingMode<Self::Point>,
+    ) -> Result<Self::Point, RoundError<Self::Point>> {
+        round(self, point, &mode, None)
     }
 
     #[cfg(feature = "random")]
     #[allow(single_use_lifetimes)] // error[E0658]: anonymous lifetimes in `impl Trait` are unstable
-    /// Round the given point according to the specified [`Mode`].
+    /// Round the given point according to the specified [`RoundingMode`].
     ///
     /// Optional random number generator can be provided
-    /// This method only makes sense for [stochastic rounding][Mode::Stochastic]
-    /// or [random tie-breaking][TieBreakingMode::Random] modes.
-    /// If you are using fully deterministic rounding modes, you should probably
-    /// use the [`Self::round`] instead.
+    /// This method only makes sense for [stochastic rounding][StochasticMode]
+    /// or [random tie-breaking][RandomTie] modes.
+    /// If you are using fully [deterministic][RoundingMode::is_deterministic] mode,
+    /// you should probably use the [`Self::round`] instead.
     ///
     ///
     /// # Note
     ///
-    /// Performing a rounding with one of the [random-based modes][Mode::is_stochastic]
+    /// Performing a rounding with one of the [random-based modes][RoundingMode::is_stochastic]
     /// with `rng=None` will use the fallback [small rng][::rand::rngs::SmallRng] for any random choices.
     /// This is `no-std` friendly but provides low-quality
     /// and cryptographically insecure predetermined results.
@@ -92,7 +92,7 @@ where
     /// That means stochastic rounding results depend on cross-thread interleaving and on prior uses elsewhere in the process,
     /// which can make behavior hard to reproduce and tests order-dependent.
     /// If you experience any difficulties with this, consider providing your own RNG
-    /// or switch to one of the [deterministic rounding modes][Mode::is_deterministic].
+    /// or switch to one of the [deterministic modes][RoundingMode::is_deterministic].
     ///
     ///
     /// # Errors
@@ -102,14 +102,10 @@ where
     fn round_with_rng<'r>(
         &self,
         point: &Self::Point,
-        mode: impl Into<Mode>,
+        mode: impl RoundingMode<Self::Point>,
         rng: impl Into<Option<&'r mut dyn RandRng>>,
-    ) -> Result<Self::Point, RoundError<Self::Point>>
-    where
-        for<'any> &'any Self::Point: Sub,
-        for<'any> <&'any Self::Point as Sub>::Output: Distance,
-    {
-        round(self, point, mode.into(), rng.into())
+    ) -> Result<Self::Point, RoundError<Self::Point>> {
+        round(self, point, &mode, rng.into())
     }
 
     /// Sort and normalize the [`nearest points`][DiscreteOrdSet::get_nearest].
@@ -128,6 +124,46 @@ where
             }
         })
     }
+}
+
+impl<S> Roundable for S
+where
+    S: DiscreteOrdSet,
+    S::Point: Zero + Ord,
+{
+}
+
+/// Rounding modes supported by the rounding routines.
+pub trait RoundingMode<T> {
+    /// Round the given point with the mode, providing nearest point(s).
+    ///
+    /// # Errors
+    ///
+    /// Return the nearest point (if it is [single][OneOrPair::One])
+    /// and the rounding cannot be made, e.g. the `nearest > point`
+    /// for the [floor mode][DirectedMode::TowardNegativeInfinity].
+    fn round(
+        &self,
+        point: &T,
+        nearest: OneOrPair<T>,
+        rng: Option<&mut dyn RandRng>,
+    ) -> Result<T, RoundError<T>>;
+
+    /// Check if the rounding mode is stochastic (i.e., involves random choices).
+    fn is_stochastic(&self) -> bool {
+        false
+    }
+
+    /// Check if the rounding mode is deterministic (i.e., does not involve random choices).
+    fn is_deterministic(&self) -> bool {
+        !self.is_stochastic()
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum TieSelection {
+    Left,
+    Right,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -163,17 +199,16 @@ where
     }
 }
 
-fn round<S, T>(
+fn round<S, M, T>(
     space: &S,
     point: &T,
-    mode: Mode,
+    mode: &M,
     rng: Option<&mut dyn RandRng>,
 ) -> Result<T, RoundError<T>>
 where
     S: Roundable<Point = T> + ?Sized,
     T: Zero + Ord,
-    for<'any> &'any T: Sub,
-    for<'any> <&'any T as Sub>::Output: Distance,
+    M: RoundingMode<T>,
 {
     match space
         .get_nearest_ordered(point)
@@ -204,9 +239,13 @@ where
     }
 }
 
-impl<S> Roundable for S
+fn distance<T, Diff>(x: T, y: T) -> Diff
 where
-    S: DiscreteOrdSet,
-    S::Point: Zero + Ord,
+    T: PartialOrd + Sub<Output = Diff>,
 {
+    if x >= y {
+        x - y
+    } else {
+        y - x
+    }
 }

@@ -44,30 +44,28 @@ fn bad<T>(x: T, _reason: &str) -> Expected<T> {
     Expected::Failure(x)
 }
 
-fn assert_rounding_cases<T, R>(space: &R, mode: impl Into<Mode>, tests: &[(T, Expected<T>)])
+#[allow(clippy::needless_pass_by_value)]
+fn assert_rounding_cases<R, M, T>(space: &R, mode: M, tests: &[(T, Expected<T>)])
 where
     R: Roundable<Point = T>,
+    M: RoundingMode<T> + Debug + Clone,
     T: Zero + Ord + Debug,
-    for<'any> &'any T: Sub,
-    for<'any> <&'any T as Sub>::Output: Distance,
 {
-    let mode = mode.into();
     for (input, expected) in tests {
         match expected {
             Expected::Success(expected) => {
                 assert_eq!(
-                    space.round(input, mode).as_ref(),
+                    space.round(input, mode.clone()).as_ref(),
                     Ok(expected),
                     "Rounding {input:?} with mode {mode:?} != {expected:?}",
                 );
             }
             Expected::Failure(failed) => {
-                let err = space.round(input, mode).unwrap_err();
+                let err = space.round(input, mode.clone()).unwrap_err();
                 assert!(
                     matches!(err, RoundError::InvalidDirection {
-                    ref rounded,
-                    direction,
-                } if rounded == failed && Mode::Directed(direction) == mode),
+                    ref rounded, ..
+                } if rounded == failed),
                     "Rounding {input:?} with mode {mode:?} should fail with {failed:?}, got {err:?}"
                 );
             }
@@ -77,7 +75,7 @@ where
 
 #[test]
 fn directed_zero_rounding_with_excluded_zero_always_choose_upper_on_tie() {
-    let space = LinearSpace::try_bounded(interval!([-10, 10]), 4).unwrap();
+    let space = LinearSpace::try_bounded(interval!([-10, 10]), 4_i32).unwrap();
 
     assert_rounding_cases(
         &space,
@@ -118,7 +116,7 @@ fn directed_zero_rounding_with_excluded_zero_always_choose_upper_on_tie() {
 
 #[test]
 fn directed_zero_rounding_with_odd_step() {
-    let space = LinearSpace::try_bounded(interval!([-10, 10]), 3).unwrap();
+    let space = LinearSpace::try_bounded(interval!([-10, 10]), 3_i32).unwrap();
 
     assert_rounding_cases(
         &space,
@@ -758,7 +756,7 @@ mod nearest {
             DirectedMode::TowardPositiveInfinity,
             DirectedMode::TowardNegativeInfinity,
         ] {
-            let mode = Mode::Nearest(mode.into());
+            let mode = NearestMode(mode);
             assert_rounding_cases(
                 &space,
                 mode,
@@ -795,7 +793,7 @@ mod nearest {
             DirectedMode::TowardZero,
             DirectedMode::TowardNegativeInfinity,
         ] {
-            let mode = Mode::Nearest(mode.into());
+            let mode = NearestMode(mode);
             assert_rounding_cases(
                 &space,
                 mode,
@@ -820,7 +818,7 @@ mod nearest {
             DirectedMode::AwayFromZero,
             DirectedMode::TowardPositiveInfinity,
         ] {
-            let mode = Mode::Nearest(mode.into());
+            let mode = NearestMode(mode);
             assert_rounding_cases(
                 &space,
                 mode,
@@ -852,7 +850,7 @@ mod nearest {
             DirectedMode::TowardPositiveInfinity,
             DirectedMode::TowardNegativeInfinity,
         ] {
-            let mode = Mode::Nearest(mode.into());
+            let mode = NearestMode(mode);
             assert_rounding_cases(
                 &space,
                 mode,
@@ -879,7 +877,7 @@ mod nearest {
     fn float_integers() {
         let space = integer_floats();
 
-        let mode = Mode::Nearest(DirectedMode::TowardZero.into());
+        let mode = NearestMode(DirectedMode::TowardZero);
         assert_rounding_cases(
             &space,
             mode,
@@ -904,7 +902,7 @@ mod nearest {
             ],
         );
 
-        let mode = Mode::Nearest(DirectedMode::AwayFromZero.into());
+        let mode = NearestMode(DirectedMode::AwayFromZero);
         assert_rounding_cases(
             &space,
             mode,
@@ -929,7 +927,7 @@ mod nearest {
             ],
         );
 
-        let mode = Mode::Nearest(DirectedMode::TowardPositiveInfinity.into());
+        let mode = NearestMode(DirectedMode::TowardPositiveInfinity);
         assert_rounding_cases(
             &space,
             mode,
@@ -954,7 +952,7 @@ mod nearest {
             ],
         );
 
-        let mode = Mode::Nearest(DirectedMode::TowardNegativeInfinity.into());
+        let mode = NearestMode(DirectedMode::TowardNegativeInfinity);
         assert_rounding_cases(
             &space,
             mode,
@@ -990,7 +988,7 @@ mod nearest {
             DirectedMode::TowardPositiveInfinity,
             DirectedMode::TowardNegativeInfinity,
         ] {
-            let mode = Mode::Nearest(mode.into());
+            let mode = NearestMode(mode);
             assert_rounding_cases(
                 &space,
                 mode,
@@ -1033,7 +1031,7 @@ mod random_rounds {
     #[test]
     fn equal_probability_for_tie() {
         let space = half_unbounded_odd();
-        let mode = Mode::Nearest(TieBreakingMode::Random {
+        let mode = NearestMode(RandomTie {
             prob_upper: Probability::default(),
         });
 
@@ -1084,7 +1082,7 @@ mod random_rounds {
     fn global_rng_works() {
         let space = half_unbounded_odd();
         let prob_upper = 0.4;
-        let mode = Mode::Nearest(TieBreakingMode::Random {
+        let mode = NearestMode(RandomTie {
             prob_upper: Probability::new(prob_upper),
         });
 
@@ -1133,7 +1131,7 @@ mod random_rounds {
     #[test]
     fn stochastic() {
         let space = hundreds();
-        let mode = Mode::Stochastic;
+        let mode = StochasticMode;
 
         let prec = 100;
         let x = 578;
@@ -1179,22 +1177,21 @@ mod random_rounds {
     fn nearest_mode_with_determined_tie_breaking() {
         let n = 1_000;
 
-        let mode_always_upper = Mode::Nearest(TieBreakingMode::Random {
+        let mode_always_upper = NearestMode(RandomTie {
             prob_upper: Probability::new(1.0),
         });
-        let mode_always_lower = Mode::Nearest(TieBreakingMode::Random {
+        let mode_always_lower = NearestMode(RandomTie {
             prob_upper: Probability::new(0.0),
         });
         for _ in 0..n {
             assert_eq!(
-                mode_always_upper
-                    .round(&105, (100, 110).into(), None)
+                RoundingMode::<u8>::round(&mode_always_upper, &105, (100, 110).into(), None)
                     .unwrap(),
                 110
             );
+
             assert_eq!(
-                mode_always_lower
-                    .round(&105, (100, 110).into(), None)
+                RoundingMode::<u8>::round(&mode_always_lower, &105, (100, 110).into(), None)
                     .unwrap(),
                 100
             );
@@ -1207,7 +1204,7 @@ mod random_rounds {
         #![allow(clippy::float_cmp)]
         let n = 1_000;
 
-        let mode = Mode::Stochastic;
+        let mode = StochasticMode;
         for _ in 0..n {
             assert_eq!(mode.round(&10.0, (9.0, 10.0).into(), None).unwrap(), 10.0);
             assert_eq!(mode.round(&9.0, (9.0, 10.0).into(), None).unwrap(), 9.0);

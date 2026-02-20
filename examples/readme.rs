@@ -300,7 +300,7 @@ fn discrete_iterators() {
 fn discrete_rounding() {
     use intrval::{
         discrete::{
-            rounding::{DirectedMode, Mode, RoundError, Roundable as _},
+            rounding::{DirectedMode, NearestMode, RoundError, Roundable as _},
             LinearSpace,
         },
         interval,
@@ -318,18 +318,17 @@ fn discrete_rounding() {
         }
     );
     assert_eq!(
-        space
-            .round(&142, Mode::Nearest(DirectedMode::DOWN.into()))
-            .unwrap(),
+        space.round(&142, NearestMode(DirectedMode::DOWN)).unwrap(),
         140,
     );
 
     #[cfg(feature = "random")]
     {
+        use intrval::discrete::rounding::StochasticMode;
         let rounded = space
             .round_with_rng(
                 &141,
-                Mode::Stochastic,
+                StochasticMode,
                 // you should provide an optional RNG for the stable results,
                 // see the caveats of using fallback RNG in docs for `round_with_rng` method.
                 None,
