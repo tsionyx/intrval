@@ -1,12 +1,27 @@
 //! The example below demonstrates the basic usage of the `intrval` crate.
 #![allow(clippy::unwrap_used)]
 
-use core::cmp::Ordering;
-
-use intrval::{interval, Interval, SetOps as _, Size};
-
-#[allow(clippy::cognitive_complexity, clippy::too_many_lines)]
 fn main() {
+    macro_syntax();
+    common_functions();
+    scalar_arithmetic();
+    interval_arithmetic();
+    set_operations();
+
+    discrete_constructors_and_getters();
+    discrete_arithmetic_operations();
+    discrete_iterators();
+    discrete_rounding();
+}
+
+/// Allows to simplify the definitions of an interval
+/// in common inequality and ranges terms.
+///
+/// For the half-open intervals, the inclusive bound is marked with `=` symbol;
+/// for the closed interval both `[a, b]` and `(=a, =b)` definitions are possible.
+fn macro_syntax() {
+    use intrval::{interval, Interval};
+
     let i0: Interval<i16> = interval!(0);
     assert_eq!(i0, Interval::Empty);
 
@@ -24,8 +39,14 @@ fn main() {
 
     let iuni: Interval<i16> = interval!(U);
     assert_eq!(iuni, Interval::Full);
+}
 
-    // ===== common functions =====
+/// Functions not falling into _arithmetic_ or _set_ categories,
+/// but still common for all intervals.
+fn common_functions() {
+    use core::cmp::Ordering;
+    use intrval::{interval, Size};
+
     assert!(interval!(0: i32).is_empty());
     assert!(interval!((1, 0)).is_empty());
     assert!(interval!((0, 0)).is_empty());
@@ -48,8 +69,13 @@ fn main() {
     assert_eq!(i_left_open.clamp(3).unwrap(), (Ordering::Equal, 3));
     assert_eq!(i_left_open.clamp(2).unwrap(), (Ordering::Greater, 2));
     assert_eq!(i_left_open.clamp(0).unwrap(), (Ordering::Greater, 2));
+}
 
-    // ===== scalar arithmetic =====
+/// Add, subtract or multiply the interval bounds with a scalar value of type `U`
+/// if the underlying type `T: {Add, Sub, Mul}<U>`.
+fn scalar_arithmetic() {
+    use intrval::{interval, Interval};
+
     // negation changes the sign and flips the bounds
     assert_eq!(-interval!(> 2), interval!(< -2));
     assert_eq!(-interval!([-2, 10]), interval!([-10, 2]));
@@ -72,8 +98,14 @@ fn main() {
     // multiplying/dividing by negative flips the bounds
     assert_eq!(interval!([-2, 10]) * -4, interval!([-40, 8]));
     assert_eq!(interval!([16, 79]) / -8, Interval::Closed((-9, -2)));
+}
 
-    // ===== interval arithmetic =====
+/// Add, subtract or multiply an `Interval<T>` with an `Interval<U>`
+/// to produce another `Interval<Z>`
+/// if the underlying type `T: {Add, Sub, Mul}<U, Output=Z>`.
+fn interval_arithmetic() {
+    use intrval::interval;
+
     let i0 = interval!(0: i32);
     let igt10 = interval!(> 10);
     let i_2to10_incl = interval!([-2, 10]);
@@ -81,14 +113,14 @@ fn main() {
     let iuni = interval!(U: i32);
 
     assert_eq!(igt10 + i_2to10_incl, interval!(> 8));
-    // adding empty does not change the proper one
+    // adding an empty interval one does not change the proper one
     assert_eq!(igt10 + interval!((1, 0)), igt10);
     assert_eq!(interval!((1, 0)) + igt10, igt10);
 
     assert_eq!(i_2to10_incl - i5to20_excl, interval!((=-22, 5)));
-    // subtracting empty does not change the proper one
+    // subtracting an empty interval does not change the proper one
     assert_eq!(igt10 - interval!((1, 0)), igt10);
-    // subtracting _from_ empty negates the proper one
+    // subtracting _from_ an empty interval negates the proper one
     assert_eq!(interval!((2, 0)) - i_2to10_incl, -i_2to10_incl);
 
     // Interval::Empty is neutral over multiplication
@@ -100,8 +132,13 @@ fn main() {
     assert_eq!(igt10 * i5to20_excl, interval!(> 50));
     // Interval::Full is neutral over multiplication
     assert_eq!(i5to20_excl * iuni, iuni);
+}
 
-    // ===== set operations =====
+/// Representation of an `Interval`-s as a sets of points
+/// allows to apply various set operations on them.
+fn set_operations() {
+    use intrval::{interval, SetOps as _};
+
     let igt2 = interval!(> 2);
     let igt_e2 = interval!(>= 2);
     let igt10 = interval!(> 10);
@@ -168,4 +205,135 @@ fn main() {
     assert_eq!((igt2 | interval!(0)).into_single().unwrap(), igt2);
 
     assert_eq!(interval!([-2, 10]).enclosure(igt10 * 2), interval!(>= -2));
+}
+
+/// Create and deconstruct discrete intervals.
+fn discrete_constructors_and_getters() {
+    use intrval::{discrete::LinearSpace, interval};
+
+    let space = LinearSpace::try_bounded(interval!([-2, 10]), 3_i8).unwrap();
+    assert_eq!(space.bounds(), &interval!([-2, 10]));
+    assert_eq!(space.step(), &3);
+    assert_eq!(space.into_parts(), (interval!([-2, 10]), 3));
+    assert_eq!(
+        space.map(|x| x * 2).unwrap().into_parts(),
+        (interval!([-4, 20]), 6)
+    );
+
+    let space = LinearSpace::try_new(10_i8).unwrap();
+    assert_eq!(space.bounds(), &interval!(U));
+    assert_eq!(space.step(), &10);
+    assert_eq!(space.into_parts(), (interval!(U), 10));
+    assert_eq!(
+        space.map(|x| x + 2).unwrap().into_parts(),
+        (interval!(U), 12)
+    );
+    assert!(space.map(|x| x - 10).is_none());
+}
+
+/// Modify the space by doing some simple operations
+/// using underlying `Interval` implementations.
+fn discrete_arithmetic_operations() {
+    use intrval::{discrete::LinearSpace, interval};
+
+    let space = LinearSpace::try_bounded(interval!((20, =142)), 10_u16).unwrap();
+
+    // `Shl` and `Shr` (forwarded to underlying `Interval`, without changing the `step`)
+    assert_eq!((space >> 5).into_parts(), (interval!((25, =147)), 10));
+    assert_eq!((space << 20).into_parts(), (interval!((0, =122)), 10));
+
+    // `Mul`/`Div` by scalar to extend/shrink the `Interval` along with the `step`
+    assert_eq!(
+        (space * 10).unwrap().into_parts(),
+        (interval!((200, =1420)), 100)
+    );
+    assert_eq!((space / 3).unwrap().into_parts(), (interval!((6, =47)), 3));
+
+    // `Mul` by another `LinearSpace`
+    let space2 = LinearSpace::try_bounded(interval!([5, 10]), 3).unwrap();
+    assert_eq!((space * space2).into_parts(), (interval!((100, =1420)), 30));
+}
+
+/// Convert a space into forward and backward iterators.
+fn discrete_iterators() {
+    use intrval::{discrete::LinearSpace, interval};
+
+    let space = LinearSpace::try_bounded(interval!((20, =80)), 10_u16).unwrap();
+    assert_eq!(
+        space.try_into_forward_iter().unwrap().collect::<Vec<_>>(),
+        [30, 40, 50, 60, 70, 80]
+    );
+    assert_eq!(
+        space.into_forward_iter_from(65).collect::<Vec<_>>(),
+        [70, 80]
+    );
+
+    let space_unbounded_lower = LinearSpace::try_bounded(interval!(<= 20), 5_u8).unwrap();
+    let _err = space_unbounded_lower.try_into_forward_iter().unwrap_err();
+    assert_eq!(
+        space_unbounded_lower
+            .into_forward_iter_from(8)
+            .collect::<Vec<_>>(),
+        [10, 15, 20]
+    );
+
+    assert_eq!(
+        space.try_into_backward_iter().unwrap().collect::<Vec<_>>(),
+        [80, 70, 60, 50, 40, 30]
+    );
+    assert_eq!(
+        space.into_backward_iter_up_to(42).collect::<Vec<_>>(),
+        [40, 30]
+    );
+
+    let space_unbounded_upper = LinearSpace::try_bounded(interval!(> 100), 5_u8).unwrap();
+    let _err = space_unbounded_upper.try_into_backward_iter().unwrap_err();
+    assert_eq!(
+        space_unbounded_upper
+            .into_backward_iter_up_to(127)
+            .collect::<Vec<_>>(),
+        [125, 120, 115, 110, 105]
+    );
+}
+
+/// Round (using `Roundable` trait) a `point: T` to the values of the space.
+fn discrete_rounding() {
+    use intrval::{
+        discrete::{
+            rounding::{DirectedMode, NearestMode, RoundError, Roundable as _},
+            LinearSpace,
+        },
+        interval,
+    };
+
+    let space = LinearSpace::try_bounded(interval!(> 100), 4_u8).unwrap();
+
+    assert_eq!(space.round(&102, DirectedMode::UP).unwrap(), 104);
+    assert_eq!(space.round(&117, DirectedMode::DOWN).unwrap(), 116);
+    assert_eq!(
+        space.round(&253, DirectedMode::AwayFromZero).unwrap_err(),
+        RoundError::InvalidDirection {
+            rounded: 252,
+            direction: DirectedMode::AwayFromZero
+        }
+    );
+    assert_eq!(
+        space.round(&142, NearestMode(DirectedMode::DOWN)).unwrap(),
+        140,
+    );
+
+    #[cfg(feature = "random")]
+    {
+        use intrval::discrete::rounding::StochasticMode;
+        let rounded = space
+            .round_with_rng(
+                &141,
+                StochasticMode,
+                // you should provide an optional RNG for the stable results,
+                // see the caveats of using fallback RNG in docs for `round_with_rng` method.
+                None,
+            )
+            .unwrap();
+        assert!([140, 144].contains(&rounded));
+    }
 }
