@@ -54,6 +54,7 @@ where
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 /// Pick between two values at random with the given probability:
 /// - right with probability `p = prob_upper`.
 /// - left with probability `q = 1 - prob_upper`;
@@ -87,6 +88,8 @@ impl<T> TieBreaking<T> for RandomTie {
 }
 
 #[derive(Debug, Copy, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(transparent))]
 /// A newtype wrapping an (optional) f64 value denoting probability.
 pub struct Probability {
     value: Option<f64>,
@@ -191,5 +194,42 @@ mod fallback_rng {
         option_env!("CONST_RANDOM_SEED")
             .map(|value| u64::from_le_bytes(slice_to_array_or_default(value.as_bytes())))
             .unwrap_or(0x1234_5678_9abc_def0)
+    }
+}
+
+#[cfg(all(feature = "serde", test))]
+mod deser_tests {
+    use serde_json::json;
+
+    use super::{super::NearestMode, *};
+
+    #[test]
+    fn nearest_mode_with_random() {
+        let j = json!({
+            "NEAREST": {"prob_upper": 0.25}
+        });
+
+        let mode: NearestMode<RandomTie> = serde_json::from_value(j).unwrap();
+        assert_eq!(
+            mode.0,
+            RandomTie {
+                prob_upper: Probability::new(0.25)
+            }
+        );
+    }
+
+    #[test]
+    fn nearest_mode_with_default_random_prob() {
+        let j = json!({
+            "NEAREST": {}
+        });
+
+        let mode: NearestMode<RandomTie> = serde_json::from_value(j).unwrap();
+        assert_eq!(
+            mode.0,
+            RandomTie {
+                prob_upper: Probability::default(),
+            }
+        );
     }
 }

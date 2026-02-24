@@ -19,8 +19,9 @@ use super::{distance, rand::RandRng, RoundError, RoundingMode, TieSelection};
 /// In that case, the implementation falls back to [`NearestMode`]
 /// and uses `self` as `TieBreaking` to select the result.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "SCREAMING_SNAKE_CASE"))]
 pub enum DirectedMode {
-    #[doc(alias = "truncate")]
     /// Round towards zero.
     ///
     /// If `x` is positive, it is (almost) the same as [round-down][Self::TowardNegativeInfinity].
@@ -31,6 +32,8 @@ pub enum DirectedMode {
     /// E.g., when rounding a positive number towards zero, the result cannot be negative,
     /// so if the nearest representable value(s) are negative, the rounding will
     /// yield an [error][RoundError::InvalidDirection].
+    #[doc(alias = "truncate")]
+    #[cfg_attr(feature = "serde", serde(alias = "TRUNCATE"))]
     TowardZero,
 
     /// Round away from zero.
@@ -39,18 +42,20 @@ pub enum DirectedMode {
     /// If `x` is negative, it is the same as [round-down][Self::TowardNegativeInfinity].
     AwayFromZero,
 
-    #[doc(alias = "ceiling")]
     /// Round up (towards positive infinity) aka `ceiling`.
     ///
     /// If `x` is positive, it is the same as [round-away-from-zero][Self::AwayFromZero].
     /// If `x` is negative, it is the same as [round-toward-zero][Self::TowardZero].
+    #[doc(alias = "ceiling")]
+    #[cfg_attr(feature = "serde", serde(alias = "UP", alias = "CEILING"))]
     TowardPositiveInfinity,
 
-    #[doc(alias = "floor")]
     /// Round down (towards negative infinity) aka `floor`.
     ///
     /// If `x` is positive, it is the same as [round-toward-zero][Self::TowardZero].
     /// If `x` is negative, it is the same as [round-away-from-zero][Self::AwayFromZero].
+    #[doc(alias = "floor")]
+    #[cfg_attr(feature = "serde", serde(alias = "DOWN", alias = "FLOOR"))]
     TowardNegativeInfinity,
 }
 
@@ -143,7 +148,41 @@ where
 /// nearest of the two values, with a specified tie-breaking strategy
 /// when the two values are equidistant from the point to round.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(
+        from = "serde_repr::Nearest<Tie>",
+        into = "serde_repr::Nearest<Tie>",
+        bound = "Tie: Clone + serde::Serialize + serde::de::DeserializeOwned"
+    )
+)]
 pub struct NearestMode<Tie>(pub Tie);
+
+#[cfg(feature = "serde")]
+/// Ser/de [`NearestMode`] using the '{"NEAREST": &lt;Tie&gt;}' format,
+/// where `Tie` is the serialization of the underlying tie-breaking strategy.
+mod serde_repr {
+    use super::NearestMode;
+
+    #[derive(Debug, serde::Serialize, serde::Deserialize)]
+    #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+    pub(super) struct Nearest<Tie> {
+        nearest: Tie,
+    }
+
+    impl<Tie> From<Nearest<Tie>> for NearestMode<Tie> {
+        fn from(value: Nearest<Tie>) -> Self {
+            Self(value.nearest)
+        }
+    }
+
+    impl<Tie> From<NearestMode<Tie>> for Nearest<Tie> {
+        fn from(value: NearestMode<Tie>) -> Self {
+            Self { nearest: value.0 }
+        }
+    }
+}
 
 impl<Tie, T> RoundingMode<T> for NearestMode<Tie>
 where
@@ -262,3 +301,91 @@ where
 // ///
 // /// <https://en.wikipedia.org/wiki/Rounding#Rounding_half_to_even>
 // pub struct Evenness(bool),
+
+#[cfg(all(feature = "serde", test))]
+mod deser_tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn toward_zero() {
+        let j = json!("TOWARD_ZERO");
+        let mode: DirectedMode = serde_json::from_value(j).unwrap();
+        assert_eq!(mode, DirectedMode::TowardZero);
+    }
+
+    #[test]
+    fn truncate() {
+        let j = json!("TRUNCATE");
+        let mode: DirectedMode = serde_json::from_value(j).unwrap();
+        assert_eq!(mode, DirectedMode::TowardZero);
+    }
+
+    #[test]
+    fn away_from_zero() {
+        let j = json!("AWAY_FROM_ZERO");
+        let mode: DirectedMode = serde_json::from_value(j).unwrap();
+        assert_eq!(mode, DirectedMode::AwayFromZero);
+    }
+
+    #[test]
+    fn toward_positive_infinity() {
+        let j = json!("TOWARD_POSITIVE_INFINITY");
+        let mode: DirectedMode = serde_json::from_value(j).unwrap();
+        assert_eq!(mode, DirectedMode::TowardPositiveInfinity);
+    }
+
+    #[test]
+    fn up() {
+        let j = json!("UP");
+        let mode: DirectedMode = serde_json::from_value(j).unwrap();
+        assert_eq!(mode, DirectedMode::TowardPositiveInfinity);
+    }
+
+    #[test]
+    fn ceiling() {
+        let j = json!("CEILING");
+        let mode: DirectedMode = serde_json::from_value(j).unwrap();
+        assert_eq!(mode, DirectedMode::TowardPositiveInfinity);
+    }
+
+    #[test]
+    fn toward_negative_infinity() {
+        let j = json!("TOWARD_NEGATIVE_INFINITY");
+        let mode: DirectedMode = serde_json::from_value(j).unwrap();
+        assert_eq!(mode, DirectedMode::TowardNegativeInfinity);
+    }
+
+    #[test]
+    fn down() {
+        let j = json!("DOWN");
+        let mode: DirectedMode = serde_json::from_value(j).unwrap();
+        assert_eq!(mode, DirectedMode::TowardNegativeInfinity);
+    }
+
+    #[test]
+    fn floor() {
+        let j = json!("FLOOR");
+        let mode: DirectedMode = serde_json::from_value(j).unwrap();
+        assert_eq!(mode, DirectedMode::TowardNegativeInfinity);
+    }
+
+    #[test]
+    fn nearest_mode() {
+        let j = json!({
+            "NEAREST": "TOWARD_ZERO",
+        });
+        let mode: NearestMode<DirectedMode> = serde_json::from_value(j).unwrap();
+        assert_eq!(mode.0, DirectedMode::TowardZero);
+    }
+
+    #[test]
+    fn nearest_mode_with_alias() {
+        let j = json!({
+            "NEAREST": "FLOOR",
+        });
+        let mode: NearestMode<DirectedMode> = serde_json::from_value(j).unwrap();
+        assert_eq!(mode.0, DirectedMode::TowardNegativeInfinity);
+    }
+}
