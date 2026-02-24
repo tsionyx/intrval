@@ -153,8 +153,10 @@ impl<const INCREASING: bool, T> FusedIterator for It<INCREASING, T> where Self: 
 
 #[cfg(test)]
 mod tests {
+    #[cfg(not(feature = "std"))]
     extern crate alloc;
 
+    #[cfg(not(feature = "std"))]
     use alloc::vec::Vec;
 
     use crate::interval;

@@ -175,6 +175,7 @@ impl<T> From<T> for ValOrInf<T> {
 }
 
 /// Synchronization primitives for internal use.
+#[cfg(not(feature = "std"))]
 pub mod sync {
     use core::{
         cell::UnsafeCell,

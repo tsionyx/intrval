@@ -1021,6 +1021,7 @@ mod nearest {
 
 #[cfg(feature = "random")]
 mod random_rounds {
+    #[cfg(not(feature = "std"))]
     extern crate std;
     use std::collections::HashMap;
 

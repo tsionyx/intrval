@@ -121,10 +121,20 @@ mod impls {
     }
     impl_measure!(i8, u8, i16, u16, i32, u32, i64, u64, isize, usize, i128, u128, f32, f64);
 
-    // FIXME: impl for `std` types (not `core`):
-    // impl Measure for std::time::{SystemTime, Instant} {
-    //     type Distance = core::time::Duration;
-    // }
+    #[cfg(feature = "std")]
+    mod impls_std {
+        use core::time::Duration;
+        use std::time::{Instant, SystemTime};
+
+        use super::super::Measure;
+
+        impl Measure for Instant {
+            type Distance = Duration;
+        }
+        impl Measure for SystemTime {
+            type Distance = Duration;
+        }
+    }
 
     /// Implement `IntDiv` for integer types by simply returning the ratio as is.
     macro_rules! impl_int_div_for_int {
@@ -138,11 +148,46 @@ mod impls {
     }
     impl_int_div_for_int!(i8, u8, i16, u16, i32, u32, i64, u64, isize, usize, i128, u128);
 
+    #[cfg(feature = "std")]
     /// Implement `IntDiv` for floating-point types by truncating the ratio.
     ///
     /// # Note
     ///
-    /// The `NaN` values will be treated as zero.
+    /// - the `NaN` values will be treated as zero;
+    /// - infinite values are clamped to the representable finite range for this type;
+    ///   (i.e., `+inf` is clamped to `MAX` and `-inf` is clamped to `MIN`).
+    macro_rules! impl_int_div_for_float {
+        ($($f:ty => $_int_ty:ty),+ $(,)?) => {$(
+            impl IntDiv for $f {
+                fn round_to_int(r: Ratio<Self>) -> Ratio<Self> {
+                    #![allow(
+                        trivial_numeric_casts,
+                        clippy::as_conversions,
+                    )]
+                    if r.is_nan() {
+                        0.0 as Ratio<Self>
+                    } else if r.is_infinite() {
+                        if r.is_sign_positive() {
+                            Ratio::<Self>::MAX
+                        } else {
+                            Ratio::<Self>::MIN
+                        }
+                    } else {
+                        r.trunc()
+                    }
+                }
+            }
+        )+};
+    }
+
+    #[cfg(not(feature = "std"))]
+    /// Implement `IntDiv` for floating-point types by truncating the ratio.
+    ///
+    /// # Note
+    ///
+    /// - the `NaN` values will be treated as zero;
+    /// - infinite values are clamped to the representable finite range for this type;
+    ///   (i.e., `+inf` is clamped to `MAX` and `-inf` is clamped to `MIN`).
     macro_rules! impl_int_div_for_float {
         ($($f:ty => $int_ty:ty),+ $(,)?) => {$(
             impl IntDiv for $f {

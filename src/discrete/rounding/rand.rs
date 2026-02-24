@@ -163,33 +163,59 @@ pub fn bernoulli_sample(p: f64, rng: Option<&mut dyn RandRng>) -> bool {
 mod fallback_rng {
     use rand::{rngs::SmallRng, SeedableRng as _};
 
-    use crate::helper::{slice_to_array_or_default, sync::OnceLock};
+    pub use impl_global::with_default_rng;
 
-    /// A global fallback RNG used for stochastic rounding when no RNG is provided.
-    ///
-    /// This is a version for `no-std` environments,
-    /// but it probably should be replaced with a more stable variant if the `std` feature is enabled:
-    ///
-    /// ```no-compile
-    /// thread_local! {
-    ///     static DEFAULT_RNG: RefCell<StdRng> =
-    ///         RefCell::new(StdRng::seed_from_u64(get_seed()));
-    /// }
-    /// ```
-    static DEFAULT_RNG: OnceLock<SmallRng> = OnceLock::new();
+    #[cfg(feature = "std")]
+    mod impl_global {
+        use super::*;
+        use std::{cell::RefCell, thread_local};
 
-    pub fn with_default_rng<F, R>(f: F) -> R
-    where
-        F: FnOnce(&mut SmallRng) -> R,
-        R: 'static,
-    {
-        DEFAULT_RNG.with_mut_spin_lock(f, || {
-            let seed = get_seed();
-            SmallRng::seed_from_u64(seed)
-        })
+        thread_local! {
+            /// A global (per-thread) fallback RNG used for stochastic rounding
+            /// when no RNG is provided.
+            ///
+            /// This is a more stable variant when the `std` feature is enabled,
+            /// but it is not available in `no-std` environments.
+            static DEFAULT_RNG: RefCell<SmallRng> = RefCell::new(SmallRng::seed_from_u64(get_seed()));
+        }
+
+        pub fn with_default_rng<F, R>(f: F) -> R
+        where
+            F: FnOnce(&mut SmallRng) -> R,
+            R: 'static,
+        {
+            DEFAULT_RNG.with(|cell| f(&mut cell.borrow_mut()))
+        }
+    }
+
+    #[cfg(not(feature = "std"))]
+    mod impl_global {
+        use super::*;
+        use crate::helper::sync::OnceLock;
+
+        /// A global (shared between threads) fallback RNG used for stochastic rounding
+        /// when no RNG is provided.
+        ///
+        /// This is a version for `no-std` environments,
+        /// but it probably should be replaced with a more stable variant
+        /// (enable the `std` feature for this).
+        static DEFAULT_RNG: OnceLock<SmallRng> = OnceLock::new();
+
+        pub fn with_default_rng<F, R>(f: F) -> R
+        where
+            F: FnOnce(&mut SmallRng) -> R,
+            R: 'static,
+        {
+            DEFAULT_RNG.with_mut_spin_lock(f, || {
+                let seed = get_seed();
+                SmallRng::seed_from_u64(seed)
+            })
+        }
     }
 
     fn get_seed() -> u64 {
+        use crate::helper::slice_to_array_or_default;
+
         // inspired by https://github.com/tkaitchuck/constrandom/
         option_env!("CONST_RANDOM_SEED")
             .map(|value| u64::from_le_bytes(slice_to_array_or_default(value.as_bytes())))
