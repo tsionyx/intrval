@@ -22,12 +22,8 @@ where
 
     /// Shift the linear space's bounds to the _left_ **without changing the step size**.
     fn shl(self, rhs: T) -> Self::Output {
-        let Self { bounds, step } = self;
-
-        Self {
-            bounds: bounds << rhs,
-            step,
-        }
+        let (bounds, step) = self.into_parts();
+        Self::new_raw(bounds << rhs, step)
     }
 }
 
@@ -39,12 +35,8 @@ where
 
     /// Shift the linear space's bounds to the _right_ **without changing the step size**.
     fn shr(self, rhs: T) -> Self::Output {
-        let Self { bounds, step } = self;
-
-        Self {
-            bounds: bounds >> rhs,
-            step,
-        }
+        let (bounds, step) = self.into_parts();
+        Self::new_raw(bounds >> rhs, step)
     }
 }
 
@@ -63,7 +55,7 @@ where
     /// `None`, if the multiplier is a negative number,
     /// thus producing an invalid `step` as a product.
     fn mul(self, rhs: U) -> Self::Output {
-        let Self { bounds, step } = self;
+        let (bounds, step) = self.into_parts();
 
         let step = step * rhs.clone();
         let bounds = bounds * rhs;
@@ -92,7 +84,7 @@ where
             return None;
         }
 
-        let Self { bounds, step } = self;
+        let (bounds, step) = self.into_parts();
 
         let step = step / rhs.clone();
         let bounds = bounds / rhs;
@@ -109,18 +101,15 @@ where
 
     /// Pairwise multiplies the bounds and step size of both spaces.
     fn mul(self, rhs: LinearSpace<U>) -> Self::Output {
-        let Self { bounds, step } = self;
-        let LinearSpace {
-            bounds: rhs_bounds,
-            step: rhs_step,
-        } = rhs;
+        let (bounds, step) = self.into_parts();
+        let (rhs_bounds, rhs_step) = rhs.into_parts();
 
         let step = step * rhs_step;
         let bounds = bounds * rhs_bounds;
         // the existence of the two `LinearSpace` guarantees the validity (positiveness)
         // of their `step`-s, so we can directly construct a new `LinearSpace`
         // without checking the validity of the new (product) `step`.
-        LinearSpace { bounds, step }
+        LinearSpace::new_raw(bounds, step)
     }
 }
 

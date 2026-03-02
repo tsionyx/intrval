@@ -36,7 +36,9 @@ where
     /// - otherwise, i.e., for the non-positive (or non-comparable) `step`,
     ///   `None` is returned.
     pub fn try_bounded(bounds: Interval<T>, step: T) -> Option<Self> {
-        step.cmp_zero()?.is_gt().then_some(Self { bounds, step })
+        step.cmp_zero()?
+            .is_gt()
+            .then_some(Self::new_raw(bounds, step))
     }
 
     /// Create a new unbounded linear space with `step` size.
@@ -56,6 +58,12 @@ where
     ///   `None` is returned.
     pub fn try_new(step: T) -> Option<Self> {
         Self::try_bounded(Interval::Full, step)
+    }
+}
+
+impl<T> LinearSpace<T> {
+    const fn new_raw(bounds: Interval<T>, step: T) -> Self {
+        Self { bounds, step }
     }
 }
 
@@ -97,7 +105,7 @@ impl<T> LinearSpace<T> {
 
 impl<T: PartialOrd> PartialEq for LinearSpace<T> {
     fn eq(&self, other: &Self) -> bool {
-        self.bounds == other.bounds && self.step == other.step
+        self.bounds() == other.bounds() && self.step() == other.step()
     }
 }
 

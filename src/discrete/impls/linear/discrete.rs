@@ -13,13 +13,13 @@ where
     T: PartialOrd + Clone + MonotonicLinear,
 {
     fn min_value(&self) -> Option<ValOrInf<T>> {
-        let (lower, upper) = self.bounds.as_ref_bounds().ok()?;
+        let (lower, upper) = self.bounds().as_ref_bounds().ok()?;
         match lower {
             // if the lower bound is inclusive,
             // the space's first point is that `Included` value
             Endpoint::Included(lower) => Some(ValOrInf::Val(lower.clone())),
             Endpoint::Excluded(lower) => {
-                let first_point = lower.clone().monotonic_add(self.step.clone())?;
+                let first_point = lower.clone().monotonic_add(self.step().clone())?;
                 // the space is empty if the first valid point goes beyond `upper`
                 (upper >= &first_point).then_some(ValOrInf::Val(first_point))
             }
@@ -32,17 +32,17 @@ where
         T: IntDiv,
     {
         let min = self.min_value()?;
-        let (lower, upper) = self.bounds.as_ref_bounds().ok()?;
+        let (lower, upper) = self.bounds().as_ref_bounds().ok()?;
 
         match min.into_val() {
             Some(min_v) => {
                 #[allow(clippy::option_if_let_else)]
                 let max = if let Some(upper_val) = upper.bound_val().copied() {
                     // the point to start counting from
-                    let near_max = find_stepped(upper_val.clone(), min_v.clone(), &self.step);
+                    let near_max = find_stepped(upper_val.clone(), min_v.clone(), self.step());
 
                     let max_point =
-                        find_best_step(near_max, &self.step, Direction::Down, |max| upper >= max);
+                        find_best_step(near_max, self.step(), Direction::Down, |max| upper >= max);
                     // if `max_point` is underflowed, use the `min_v` as it has a finite value
                     ValOrInf::Val(max_point.unwrap_or(min_v))
                 } else {
@@ -57,7 +57,7 @@ where
                     // the space's max point is that `Included` value
                     Endpoint::Included(upper) => Some(ValOrInf::Val(upper.clone())),
                     Endpoint::Excluded(upper) => {
-                        let last_point = upper.clone().monotonic_sub(self.step.clone())?;
+                        let last_point = upper.clone().monotonic_sub(self.step().clone())?;
                         // the space is empty if the last valid point goes beyond `lower`
                         (lower <= &last_point).then_some(ValOrInf::Val(last_point))
                     }
@@ -76,7 +76,7 @@ where
 
     fn contains(&self, point: &Self::Point) -> bool {
         // the point should be within the bounds
-        if !self.bounds.contains(point) {
+        if !self.bounds().contains(point) {
             return false;
         }
 
@@ -106,8 +106,8 @@ where
         let origin = min
             .into_val()
             .or_else(|| max.into_val())
-            .unwrap_or_else(|| self.step.clone());
-        let stepped = find_stepped(point.clone(), origin, &self.step);
+            .unwrap_or_else(|| self.step().clone());
+        let stepped = find_stepped(point.clone(), origin, self.step());
         stepped == *point
     }
 
@@ -152,7 +152,7 @@ where
 
         // the point should be within the bounds now;
         // if it is not, it is preferable do not continue
-        if !self.bounds.contains(point) {
+        if !self.bounds().contains(point) {
             return None;
         }
 
@@ -160,17 +160,17 @@ where
             let origin = min
                 .into_val()
                 .or_else(|| max.into_val())
-                .unwrap_or_else(|| self.step.clone());
-            find_stepped(point.clone(), origin, &self.step)
+                .unwrap_or_else(|| self.step().clone());
+            find_stepped(point.clone(), origin, self.step())
         };
 
         let lower = find_best_step(
             point_stepped.clone(),
-            &self.step,
+            self.step(),
             Direction::Down,
             |lower| lower <= point,
         );
-        let upper = find_best_step(point_stepped, &self.step, Direction::Up, |upper| {
+        let upper = find_best_step(point_stepped, self.step(), Direction::Up, |upper| {
             upper >= point
         });
 
@@ -184,7 +184,7 @@ where
     fn get_next(&self, point: &Self::Point) -> Option<Self::Point> {
         let adjust_nearest = |nearest: T| match nearest.partial_cmp(point)? {
             Ordering::Greater => Some(nearest),
-            Ordering::Equal => nearest.monotonic_add(self.step.clone()).filter(|next| {
+            Ordering::Equal => nearest.monotonic_add(self.step().clone()).filter(|next| {
                 #[allow(clippy::option_if_let_else)]
                 self.get_max().is_some_and(|max| match max.into_val() {
                     Some(max_v) => next <= &max_v,
@@ -203,7 +203,7 @@ where
     fn get_prev(&self, point: &Self::Point) -> Option<Self::Point> {
         let adjust_nearest = |nearest: T| match nearest.partial_cmp(point)? {
             Ordering::Greater => None,
-            Ordering::Equal => nearest.monotonic_sub(self.step.clone()).filter(|prev| {
+            Ordering::Equal => nearest.monotonic_sub(self.step().clone()).filter(|prev| {
                 #[allow(clippy::option_if_let_else)]
                 self.get_min().is_some_and(|min| match min.into_val() {
                     Some(min_v) => prev >= &min_v,
