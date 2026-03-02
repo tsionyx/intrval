@@ -1,3 +1,5 @@
+use core::num::{NonZeroU128, NonZeroU16, NonZeroU32, NonZeroU64, NonZeroU8, NonZeroUsize};
+
 use crate::{interval::Interval, traits::Zero};
 
 mod discrete;
@@ -65,6 +67,61 @@ impl<T> LinearSpace<T> {
     const fn new_raw(bounds: Interval<T>, step: T) -> Self {
         Self { bounds, step }
     }
+}
+
+/// If the step size forced to be `>0`,
+/// the constructed values are always valid.
+macro_rules! impl_with_non_zero_step {
+    ($($inner:ty => $non_zero:ty),+ $(,)?) => {$(
+        impl LinearSpace<$inner> {
+            #[doc = "Create a new linear space with the given `bounds` and `step` size."]
+            #[doc = "\n"]
+            #[doc = concat!("When the `step` is [`", stringify!($non_zero), "`]")]
+            #[doc = "the result is guaranteed to be valid, as opposed to"]
+            #[doc = "the generic constructor [`Self::try_bounded`]."]
+            pub const fn bounded(bounds: Interval<$inner>, step: $non_zero) -> Self {
+                Self::new_raw(bounds, step.get())
+            }
+
+            #[doc = "Create a new unbounded linear space with `step` size."]
+            #[doc = "\n"]
+            #[doc = concat!("When the `step` is [`", stringify!($non_zero), "`]")]
+            #[doc = "the result is guaranteed to be valid, as opposed to"]
+            #[doc = "the generic constructor [`Self::try_new`]."]
+            pub const fn new(step: $non_zero) -> Self {
+                Self::bounded(Interval::Full, step)
+            }
+        }
+
+        impl LinearSpace<$non_zero> {
+            #[doc = "Create a new linear space with the given `bounds` and `step` size."]
+            #[doc = "\n"]
+            #[doc = concat!("When the `step` is [`", stringify!($non_zero), "`]")]
+            #[doc = "the result is guaranteed to be valid, as opposed to"]
+            #[doc = "the generic constructor [`Self::try_bounded`]."]
+            pub const fn bounded(bounds: Interval<$non_zero>, step: $non_zero) -> Self {
+                Self::new_raw(bounds, step)
+            }
+
+            #[doc = "Create a new unbounded linear space with `step` size."]
+            #[doc = "\n"]
+            #[doc = concat!("When the `step` is [`", stringify!($non_zero), "`]")]
+            #[doc = "the result is guaranteed to be valid, as opposed to"]
+            #[doc = "the generic constructor [`Self::try_new`]."]
+            pub const fn new(step: $non_zero) -> Self {
+                Self::bounded(Interval::Full, step)
+            }
+        }
+    )+}
+}
+
+impl_with_non_zero_step! {
+    u8 => NonZeroU8,
+    u16 => NonZeroU16,
+    u32 => NonZeroU32,
+    u64 => NonZeroU64,
+    u128 => NonZeroU128,
+    usize => NonZeroUsize,
 }
 
 impl<T> LinearSpace<T> {
