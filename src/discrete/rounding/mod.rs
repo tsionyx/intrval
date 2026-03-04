@@ -3,7 +3,7 @@
 //!
 //! <https://en.wikipedia.org/wiki/Rounding>
 
-use core::{fmt, ops::Sub};
+use core::fmt;
 
 use crate::{
     helper::{minmax, OneOrPair},
@@ -236,16 +236,5 @@ where
             mode.round(point, OneOrPair::Pair((a, b)), rng)
         }
         single @ OneOrPair::One(_) => mode.round(point, single, rng),
-    }
-}
-
-fn distance<T, Diff>(x: T, y: T) -> Diff
-where
-    T: PartialOrd + Sub<Output = Diff>,
-{
-    if x >= y {
-        x - y
-    } else {
-        y - x
     }
 }

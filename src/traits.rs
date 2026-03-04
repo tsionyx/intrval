@@ -18,12 +18,27 @@ pub trait Zero {
     fn cmp_zero(&self) -> Option<Ordering>;
 }
 
-/// The ability to have a distance between two values of the type.
-pub trait Measure:
-    Sized + Add<Self::Distance, Output = Self> + Sub<Self::Distance, Output = Self>
-{
-    /// The type representing a distance (difference) between two quantities.
+/// The trait representing ability to have a distance
+/// between two values of the type.
+pub trait Metric: Sized {
+    /// The type representing a distance (difference) between two items.
     type Distance;
+
+    /// Calculate the distance between two points.
+    ///
+    /// This method is expected to be commutative.
+    fn distance(&self, rhs: &Self) -> Self::Distance;
+}
+
+/// The trait representing ability to be extended/reduced by the [`Metric::Distance`].
+pub trait Measure:
+    Metric + Add<Self::Distance, Output = Self> + Sub<Self::Distance, Output = Self>
+{
+}
+
+impl<T> Measure for T where
+    T: Metric + Add<Self::Distance, Output = Self> + Sub<Self::Distance, Output = Self>
+{
 }
 
 /// Helper trait combining the four basic arithmetic _linear_ operations:
@@ -93,7 +108,7 @@ pub trait MonotonicLinear: Linear + PartialOrd {
 }
 
 mod impls {
-    use core::time::Duration;
+    use core::{ops::Sub as _, time::Duration};
 
     use super::{IntDiv, MonotonicLinear, Ratio, Zero};
 
@@ -119,16 +134,25 @@ mod impls {
     impl_zero!(using Duration::ZERO => Duration);
 
     #[macro_export]
-    /// Helper macro to implement `Measure` for numeric types
-    /// which implement `Add<Output=Self> + Sub<Output=Self> + PartialOrd`
-    macro_rules! impl_measure {
-        ($($n:ty),+ $(,)?) => {$(
-            impl $crate::Measure for $n {
+    /// Helper macro to implement [`Metric`][crate::Metric] for numeric types
+    /// which implement a `Copy + PartialOrd` and have a `$diff` method.
+    macro_rules! impl_metric {
+        (using $diff:ident for $($n:ty),+ $(,)?) => {$(
+            impl $crate::Metric for $n {
                 type Distance = Self;
+
+                fn distance(&self, rhs: &Self) -> Self::Distance {
+                    if self < rhs {
+                        rhs.$diff(*self)
+                    } else {
+                        self.$diff(*rhs)
+                    }
+                }
             }
         )+};
     }
-    impl_measure!(i8, u8, i16, u16, i32, u32, i64, u64, isize, usize, i128, u128, f32, f64);
+    impl_metric!(using saturating_sub for i8, u8, i16, u16, i32, u32, i64, u64, isize, usize, i128, u128);
+    impl_metric!(using sub for f32, f64);
 
     /// Implement `IntDiv` for integer types by simply returning the ratio as is.
     macro_rules! impl_int_div_for_int {
@@ -334,13 +358,24 @@ mod impls {
         // TODO: create a notion of zero instant
         //impl_zero!(using zero_instant() => Instant);
 
-        use super::super::Measure;
+        use super::super::Metric;
 
-        impl Measure for Instant {
+        impl Metric for Instant {
             type Distance = Duration;
+
+            fn distance(&self, rhs: &Self) -> Self::Distance {
+                self.checked_duration_since(*rhs)
+                    .unwrap_or_else(|| rhs.duration_since(*self))
+            }
         }
-        impl Measure for SystemTime {
+
+        impl Metric for SystemTime {
             type Distance = Duration;
+
+            fn distance(&self, rhs: &Self) -> Self::Distance {
+                self.duration_since(*rhs)
+                    .unwrap_or_else(|err| err.duration())
+            }
         }
     }
 

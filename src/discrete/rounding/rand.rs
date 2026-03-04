@@ -1,14 +1,12 @@
 //! Implementation details dependent on the `random` feature,
 //! which is used to support stochastic rounding.
 
-use core::ops::Sub;
-
 use crate::{
     helper::{OneOrPair, Pair},
-    traits::Zero,
+    traits::{Metric, Zero},
 };
 
-use super::{distance, modes::TieBreaking, RoundError, RoundingMode, TieSelection};
+use super::{modes::TieBreaking, RoundError, RoundingMode, TieSelection};
 
 pub use rand::RngCore as RandRng;
 
@@ -19,9 +17,8 @@ pub struct StochasticMode;
 
 impl<T> RoundingMode<T> for StochasticMode
 where
-    T: Zero + PartialOrd,
-    for<'any> &'any T: Sub,
-    for<'any> <&'any T as Sub>::Output: TryInto<f64>,
+    T: PartialOrd + Zero + Metric,
+    <T as Metric>::Distance: TryInto<f64>,
 {
     fn round(
         &self,
@@ -30,8 +27,8 @@ where
         rng: Option<&mut dyn RandRng>,
     ) -> Result<T, RoundError<T>> {
         Ok(nearest.single_or_fold(|nearest_lower, nearest_upper| {
-            let total: Option<f64> = distance(&nearest_upper, &nearest_lower).try_into().ok();
-            let to_lower: Option<f64> = distance(&nearest_lower, point).try_into().ok();
+            let total: Option<f64> = nearest_upper.distance(&nearest_lower).try_into().ok();
+            let to_lower: Option<f64> = point.distance(&nearest_lower).try_into().ok();
 
             // the closer (_less_ distance) to `lower`, the _lower_ the probability to pick `upper`
             //
