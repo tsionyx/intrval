@@ -40,14 +40,6 @@ pub trait Measure:
     type Distance;
 }
 
-// blanket impl for homogeneous addition/subtraction
-impl<T> Measure for T
-where
-    Self: Add<Output = Self> + Sub<Output = Self>,
-{
-    type Distance = Self;
-}
-
 /// Helper trait combining the four basic arithmetic _linear_ operations:
 /// - addition / subtraction;
 /// - multiplying to scalar value;
@@ -116,6 +108,18 @@ pub trait MonotonicLinear: Linear + PartialOrd {
 
 mod impls {
     use super::{IntDiv, MonotonicLinear, Ratio, Zero};
+
+    #[macro_export]
+    /// Helper macro to implement `Measure` for numeric types
+    /// which implement `Add<Output=Self> + Sub<Output=Self> + PartialOrd`
+    macro_rules! impl_measure {
+        ($($n:ty),+ $(,)?) => {$(
+            impl $crate::Measure for $n {
+                type Distance = Self;
+            }
+        )+};
+    }
+    impl_measure!(i8, u8, i16, u16, i32, u32, i64, u64, isize, usize, i128, u128, f32, f64);
 
     // FIXME: impl for `std` types (not `core`):
     // impl Measure for std::time::{SystemTime, Instant} {
@@ -208,19 +212,13 @@ mod impls {
 
     #[macro_export]
     /// Helper macro to implement `IntDiv` for numeric types
-    /// which ratio could be (fallibly) converted to/from core numeric types that
+    /// which ratio could be converted into/from core numeric types that
     /// already implement `IntDiv`.
     ///
     /// The following underlying primitive types are now supported
     /// (and can be used on the right hand of `as` in the macro):
     /// - integers: i8, u8, i16, u16, i32, u32, i64, u64, isize, usize, i128, u128
     /// - floats: f32, f64
-    ///
-    /// # Note
-    /// The macro uses `unwrap_or_default()`, which means type conversion failures
-    /// will result in default values (typically zero) being used instead of propagating errors.
-    /// If you cannot rely on this behaviour, it is better to provide the manual implementation
-    /// of the `IntDiv` instead to cover the edge cases of the type conversions.
     ///
     /// # TODO
     ///
@@ -232,17 +230,17 @@ mod impls {
     /// The naive blanket impl approach `impl for T where T: Into<f64> + From<f64>`
     /// does not work due to orphan rule.
     macro_rules! impl_int_div {
-        ($num_ty:ty as $core_ty:ty) => {
+        ($($num_ty:ty as $core_ty:ty),+ $(,)?) => {$(
             impl $crate::IntDiv for $num_ty {
                 fn round_to_int(
                     r: <Self as core::ops::Div>::Output,
                 ) -> <Self as core::ops::Div>::Output {
-                    let core_num_ratio = r.try_into().unwrap_or_default();
+                    let core_num_ratio = r.into();
                     let ratio_rounded = <$core_ty>::round_to_int(core_num_ratio);
-                    ratio_rounded.try_into().unwrap_or_default()
+                    ratio_rounded.into()
                 }
             }
-        };
+        )+};
     }
 
     /// Implement `MonotonicLinear` for integer types using the `checked_*` methods.
