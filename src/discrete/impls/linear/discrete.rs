@@ -29,7 +29,7 @@ where
 
     fn max_value(&self) -> Option<ValOrInf<T>>
     where
-        T: IntDiv,
+        T: IntDiv<Output = T::Scalar>,
     {
         let min = self.min_value()?;
         let (lower, upper) = self.bounds().as_ref_bounds().ok()?;
@@ -70,7 +70,7 @@ where
 
 impl<T> DiscreteOrdSet for LinearSpace<T>
 where
-    T: PartialOrd + Clone + MonotonicLinear + IntDiv,
+    T: PartialOrd + Clone + MonotonicLinear + IntDiv<Output = T::Scalar>,
 {
     type Point = T;
 
@@ -230,7 +230,7 @@ enum Direction {
 
 fn find_stepped<T>(x: T, origin: T, step: &T) -> T
 where
-    T: Clone + PartialOrd + MonotonicLinear + IntDiv,
+    T: Clone + PartialOrd + MonotonicLinear + IntDiv<Output = T::Scalar>,
 {
     // try to reduce the number of possible steps
     // and the risk of possible over/under-flows
@@ -255,7 +255,7 @@ where
 /// when the operations to find the stepped point overflowed.
 fn find_stepped_inner<T>(x: T, origin: T, step: &T) -> Result<T, T>
 where
-    T: Clone + PartialOrd + MonotonicLinear + IntDiv,
+    T: Clone + PartialOrd + MonotonicLinear + IntDiv<Output = T::Scalar>,
 {
     let direction = x > origin;
 
@@ -293,7 +293,7 @@ where
     };
 
     let no_steps = distance.int_div(step.clone());
-    let delta = step.clone() * no_steps;
+    let delta = step.clone().mul_scalar(no_steps);
     if direction {
         origin.clone().monotonic_add(delta).map(|mut x| {
             for _ in 0..additional_steps {

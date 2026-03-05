@@ -41,17 +41,41 @@ impl<T> Measure for T where
 {
 }
 
-/// Helper trait combining the four basic arithmetic _linear_ operations:
+/// Helper trait combining the basic arithmetic _linear_ operations:
 /// - addition / subtraction;
 /// - multiplying to scalar value;
 /// - dividing to get scalar (ratio) value.
 ///
 /// <https://en.wikipedia.org/wiki/Linear_space>
-pub trait Linear: Measure<Distance = Self> + Mul<Ratio<Self>, Output = Self> + Div<Self> {}
+pub trait Linear: Measure {
+    /// The scalar type to be used in Mul/Div operations.
+    type Scalar;
 
-type Ratio<T> = <T as Div<T>>::Output;
+    #[must_use]
+    /// Multiply a value to scalar getting another value.
+    fn mul_scalar(self, scalar: Self::Scalar) -> Self;
 
-impl<T> Linear for T where T: Measure<Distance = Self> + Mul<Ratio<Self>, Output = Self> + Div<Self> {}
+    /// Get a ratio of two values as a [Scalar][Self::Scalar] value.
+    fn get_ratio(self, rhs: Self) -> Self::Scalar;
+}
+
+/// The result of division `T/T`.
+pub type Ratio<T> = <T as Div<T>>::Output;
+
+impl<T> Linear for T
+where
+    T: Measure + Mul<Ratio<Self>, Output = Self> + Div,
+{
+    type Scalar = Ratio<Self>;
+
+    fn mul_scalar(self, scalar: Self::Scalar) -> Self {
+        self.mul(scalar)
+    }
+
+    fn get_ratio(self, rhs: Self) -> Self::Scalar {
+        self.div(rhs)
+    }
+}
 
 /// Extend a [self-divisible type][Div] with integer division.
 pub trait IntDiv: Div + Sized {
