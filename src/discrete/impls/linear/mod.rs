@@ -172,7 +172,7 @@ impl<T: PartialOrd> Eq for LinearSpace<T> {}
 mod tests {
     use core::ops::Sub as _;
 
-    use crate::{impl_int_div, impl_metric, impl_zero, traits::MonotonicLinear};
+    use crate::{impl_int_div, impl_metric, impl_zero, traits::MonotonicMeasure};
 
     type F32 = ordered_float::OrderedFloat<f32>;
     type F64 = ordered_float::OrderedFloat<f64>;
@@ -181,7 +181,7 @@ mod tests {
     impl_metric!(using sub for F32, F64);
     impl_int_div!(F32 as f32, F64 as f64);
 
-    impl MonotonicLinear for F32 {
+    impl MonotonicMeasure for F32 {
         fn monotonic_add(self, rhs: Self) -> Option<Self> {
             self.0.monotonic_add(rhs.0).map(Self)
         }
@@ -191,7 +191,7 @@ mod tests {
         }
     }
 
-    impl MonotonicLinear for F64 {
+    impl MonotonicMeasure for F64 {
         fn monotonic_add(self, rhs: Self) -> Option<Self> {
             self.0.monotonic_add(rhs.0).map(Self)
         }

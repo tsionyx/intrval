@@ -3,14 +3,14 @@ use core::cmp::Ordering;
 use crate::{
     bounds::Endpoint,
     helper::{OneOrPair, ValOrInf},
-    traits::{IntDiv, MonotonicLinear},
+    traits::{IntDiv, Linear, MonotonicMeasure},
 };
 
 use super::{super::super::DiscreteOrdSet, LinearSpace};
 
 impl<T> LinearSpace<T>
 where
-    T: PartialOrd + Clone + MonotonicLinear,
+    T: PartialOrd + Clone + MonotonicMeasure,
 {
     fn min_value(&self) -> Option<ValOrInf<T>> {
         let (lower, upper) = self.bounds().as_ref_bounds().ok()?;
@@ -29,7 +29,7 @@ where
 
     fn max_value(&self) -> Option<ValOrInf<T>>
     where
-        T: IntDiv<Output = T::Scalar>,
+        T: Linear + IntDiv<Output = <T as Linear>::Scalar>,
     {
         let min = self.min_value()?;
         let (lower, upper) = self.bounds().as_ref_bounds().ok()?;
@@ -70,7 +70,7 @@ where
 
 impl<T> DiscreteOrdSet for LinearSpace<T>
 where
-    T: PartialOrd + Clone + MonotonicLinear + IntDiv<Output = T::Scalar>,
+    T: PartialOrd + Clone + Linear + MonotonicMeasure + IntDiv<Output = <T as Linear>::Scalar>,
 {
     type Point = T;
 
@@ -230,7 +230,7 @@ enum Direction {
 
 fn find_stepped<T>(x: T, origin: T, step: &T) -> T
 where
-    T: Clone + PartialOrd + MonotonicLinear + IntDiv<Output = T::Scalar>,
+    T: Clone + PartialOrd + Linear + MonotonicMeasure + IntDiv<Output = <T as Linear>::Scalar>,
 {
     // try to reduce the number of possible steps
     // and the risk of possible over/under-flows
@@ -255,7 +255,7 @@ where
 /// when the operations to find the stepped point overflowed.
 fn find_stepped_inner<T>(x: T, origin: T, step: &T) -> Result<T, T>
 where
-    T: Clone + PartialOrd + MonotonicLinear + IntDiv<Output = T::Scalar>,
+    T: Clone + PartialOrd + Linear + MonotonicMeasure + IntDiv<Output = <T as Linear>::Scalar>,
 {
     let direction = x > origin;
 
@@ -329,7 +329,7 @@ where
 /// return the last point for which `condition` holds.
 fn find_best_step<T, F>(start: T, step: &T, dir: Direction, mut condition: F) -> Option<T>
 where
-    T: Clone + MonotonicLinear,
+    T: Clone + MonotonicMeasure,
     F: FnMut(&T) -> bool,
 {
     let mut current = start;

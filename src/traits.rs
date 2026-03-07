@@ -1,7 +1,7 @@
 //! The traits describing some numerical behaviour.
 use core::{
     cmp::Ordering,
-    ops::{Add, Div, Mul, Sub},
+    ops::{Div, Mul},
 };
 
 /// The trait to define scalar (single-dimension) types
@@ -30,24 +30,13 @@ pub trait Metric: Sized {
     fn distance(&self, rhs: &Self) -> Self::Distance;
 }
 
-/// The trait representing ability to be extended/reduced by the [`Metric::Distance`].
-pub trait Measure:
-    Metric + Add<Self::Distance, Output = Self> + Sub<Self::Distance, Output = Self>
-{
-}
-
-impl<T> Measure for T where
-    T: Metric + Add<Self::Distance, Output = Self> + Sub<Self::Distance, Output = Self>
-{
-}
-
 /// Helper trait combining the basic arithmetic _linear_ operations:
 /// - addition / subtraction;
 /// - multiplying to scalar value;
 /// - dividing to get scalar (ratio) value.
 ///
 /// <https://en.wikipedia.org/wiki/Linear_space>
-pub trait Linear: Measure {
+pub trait Linear: Metric {
     /// The scalar type to be used in Mul/Div operations.
     type Scalar;
 
@@ -64,7 +53,7 @@ pub type Ratio<T> = <T as Div<T>>::Output;
 
 impl<T> Linear for T
 where
-    T: Measure + Mul<Ratio<Self>, Output = Self> + Div,
+    T: Metric + Mul<Ratio<Self>, Output = Self> + Div,
 {
     type Scalar = Ratio<Self>;
 
@@ -99,7 +88,7 @@ pub trait IntDiv: Div + Sized {
 /// to other linear types.
 /// E.g. for floating-point types, the `monotonic_{add,sub}` would check for `NaN` results
 /// or the loss of precision when the operands' magnitudes differ significantly.
-pub trait MonotonicLinear: Linear + PartialOrd {
+pub trait MonotonicMeasure: Metric + PartialOrd {
     /// Check and perform monotonic addition.
     ///
     /// The operation should ensure the sum is:
@@ -134,7 +123,7 @@ pub trait MonotonicLinear: Linear + PartialOrd {
 mod impls {
     use core::{ops::Sub as _, time::Duration};
 
-    use super::{IntDiv, MonotonicLinear, Ratio, Zero};
+    use super::{IntDiv, MonotonicMeasure, Ratio, Zero};
 
     #[macro_export]
     /// Helper macro to implement [`Zero`][crate::Zero] for numeric types
@@ -330,10 +319,10 @@ mod impls {
         )+};
     }
 
-    /// Implement `MonotonicLinear` for integer types using the `checked_*` methods.
+    /// Implement `MonotonicMeasure` for integer types using the `checked_*` methods.
     macro_rules! impl_monotonic_for_int {
         ($($int:ty),+ $(,)?) => {$(
-            impl MonotonicLinear for $int {
+            impl MonotonicMeasure for $int {
                 fn monotonic_add(self, rhs: Self) -> Option<Self> {
                     self.checked_add(rhs)
                 }
@@ -346,10 +335,10 @@ mod impls {
     }
     impl_monotonic_for_int!(i8, u8, i16, u16, i32, u32, i64, u64, isize, usize, i128, u128);
 
-    /// Implement `MonotonicLinear` for floating types by explicitly checking the result.
+    /// Implement `MonotonicMeasure` for floating types by explicitly checking the result.
     macro_rules! impl_monotonic_for_float {
         ($($f:ty),+ $(,)?) => {$(
-            impl MonotonicLinear for $f {
+            impl MonotonicMeasure for $f {
                 fn monotonic_add(self, rhs: Self) -> Option<Self> {
                     let zero_ord = rhs.cmp_zero()?;
                     let result = self + rhs;
