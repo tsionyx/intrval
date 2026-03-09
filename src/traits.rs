@@ -72,7 +72,7 @@ pub trait LinearIntRatio: Linear {
 /// E.g. for floating-point types, the `monotonic_{add,sub}` would check for `NaN` results
 /// or the loss of precision when the operands' magnitudes differ significantly.
 pub trait MonotonicMeasure: Metric + PartialOrd {
-    /// Check and perform monotonic addition.
+    /// Monotonically perform an addition of a distance.
     ///
     /// The operation should ensure the sum is:
     /// - greater than `self` when the `rhs` is greater than zero;
@@ -81,13 +81,13 @@ pub trait MonotonicMeasure: Metric + PartialOrd {
     ///
     /// or in pseudocode:
     /// ```no_compile
-    /// let zero_ord = rhs.cmp_zero()?;
-    /// let result = self.clone() + rhs;
+    /// let zero_ord = diff.cmp_zero()?;
+    /// let result = self.clone() + diff;
     /// (result.partial_cmp(&self)? == zero_ord).then_some(result)
     /// ```
-    fn monotonic_add(self, rhs: Self) -> Option<Self>;
+    fn monotonic_add(self, diff: Self::Distance) -> Option<Self>;
 
-    /// Check and perform monotonic subtraction.
+    /// Monotonically perform a subtraction of a distance.
     ///
     /// The operation should ensure the difference is:
     /// - less than `self` when the `rhs` is greater than zero;
@@ -96,11 +96,20 @@ pub trait MonotonicMeasure: Metric + PartialOrd {
     ///
     /// or in pseudocode:
     /// ```no_compile
-    /// let zero_ord = rhs.cmp_zero()?;
-    /// let result = self.clone() - rhs;
-    /// (result.partial_cmp(&self)? == zero_ord.reverse()).then_some(result)
+    /// let zero_ord = diff.cmp_zero()?;
+    /// let result = self.clone() - diff;
+    /// (self.partial_cmp(&result)? == zero_ord).then_some(result)
     /// ```
-    fn monotonic_sub(self, rhs: Self) -> Option<Self>;
+    fn monotonic_sub(self, diff: Self::Distance) -> Option<Self>;
+
+    /// Get a (non-negative) distance between points.
+    ///
+    /// The operation should ensure the distance is:
+    /// - greater than or equal to zero;
+    /// - commutative, i.e., `self.checked_diff(rhs) == rhs.checked_diff(self)`;
+    /// - `None` if overflow or loss of precision occurs, i.e.,
+    ///   if the result is not a valid distance between the two points.
+    fn checked_diff(self, rhs: Self) -> Option<Self::Distance>;
 }
 
 mod impls {
@@ -337,12 +346,22 @@ mod impls {
     macro_rules! impl_monotonic_for_int {
         ($($int:ty),+ $(,)?) => {$(
             impl MonotonicMeasure for $int {
-                fn monotonic_add(self, rhs: Self) -> Option<Self> {
-                    self.checked_add(rhs)
+                fn monotonic_add(self, diff: Self::Distance) -> Option<Self> {
+                    self.checked_add(diff)
                 }
 
-                fn monotonic_sub(self, rhs: Self) -> Option<Self> {
-                    self.checked_sub(rhs)
+                fn monotonic_sub(self, diff: Self::Distance) -> Option<Self> {
+                    self.checked_sub(diff)
+                }
+
+                fn checked_diff(self, rhs: Self) -> Option<Self::Distance> {
+                    // simple `.abs_diff()` could overflow
+                    if self > rhs {
+                        self.checked_sub(rhs)
+                    }
+                    else {
+                        rhs.checked_sub(self)
+                    }
                 }
             }
         )+};
@@ -353,28 +372,105 @@ mod impls {
     macro_rules! impl_monotonic_for_float {
         ($($f:ty),+ $(,)?) => {$(
             impl MonotonicMeasure for $f {
-                fn monotonic_add(self, rhs: Self) -> Option<Self> {
-                    let zero_ord = rhs.cmp_zero()?;
-                    let result = self + rhs;
-                    if !result.is_finite() {
+                fn monotonic_add(self, diff: Self::Distance) -> Option<Self> {
+                    let zero_ord = diff.cmp_zero()?;
+                    let result = self + diff;
+                    if !result.is_finite() || result.is_nan() {
                         return None;
                     }
                     (result.partial_cmp(&self)? == zero_ord).then_some(result)
                 }
 
-                fn monotonic_sub(self, rhs: Self) -> Option<Self> {
-                    let zero_ord = rhs.cmp_zero()?;
-                    let result = self - rhs;
-                    if !result.is_finite() {
+                fn monotonic_sub(self, diff: Self::Distance) -> Option<Self> {
+                    let zero_ord = diff.cmp_zero()?;
+                    let result = self - diff;
+                    if !result.is_finite() || result.is_nan() {
                         return None;
                     }
-                    (result.partial_cmp(&self)? == zero_ord.reverse()).then_some(result)
+                    (self.partial_cmp(&result)? == zero_ord).then_some(result)
+                }
+
+                fn checked_diff(self, rhs: Self) -> Option<Self::Distance> {
+                    let result = if self > rhs {
+                        self - rhs
+                    }
+                    else {
+                        rhs - self
+                    };
+                    if !result.is_finite() || result.is_nan() {
+                        return None;
+                    }
+
+                    {
+                        #![allow(clippy::float_cmp)]
+
+                        let rhs_is_zero = rhs.cmp_zero()?.is_eq();
+                        let self_abs = if self.is_sign_positive() {
+                            self
+                        } else {
+                            -self
+                        };
+
+                        let self_is_zero = self.cmp_zero()?.is_eq();
+                        let rhs_abs = if rhs.is_sign_positive() {
+                            rhs
+                        } else {
+                            -rhs
+                        };
+
+                        // if the magnitudes differ significantly, the result may lose precision
+                        // and struggle to change the larger operand, thus failing the monotonicity check
+
+                        // one `argument!=0` implies result differs from the `abs()` of another operand
+                        ((
+                            rhs_is_zero ||
+                            !self_abs.partial_cmp(&result)?.is_eq() ||
+                            self * 2.0 == rhs // `self_abs` could be equal to `result` in a valid situation when `rhs - self = self`
+                        ) && (
+                            self_is_zero ||
+                            !rhs_abs.partial_cmp(&result)?.is_eq() ||
+                            rhs * 2.0 == self // `rhs_abs` could be equal to `result` in a valid situation when `self - rhs = rhs`
+                        )).then_some(result)
+                    }
                 }
             }
         )+};
     }
 
     impl_monotonic_for_float!(f32, f64);
+
+    #[macro_export]
+    /// Helper macro to implement `MonotonicMeasure` for numeric types
+    /// which could be converted into/from core numeric types that
+    /// already implement `MonotonicMeasure`.
+    ///
+    /// The following underlying primitive types are now supported
+    /// (and can be used on the right hand of `as` in the macro):
+    /// - integers: i8, u8, i16, u16, i32, u32, i64, u64, isize, usize, i128, u128
+    /// - floats: f32, f64
+    macro_rules! impl_monotonic {
+        ($($num_ty:ty as $core_ty:ty),+ $(,)?) => {$(
+            impl $crate::MonotonicMeasure for $num_ty {
+                fn monotonic_add(self, diff: Self::Distance) -> Option<Self> {
+                    let core_self: $core_ty = self.into();
+                    let core_diff: <$core_ty as $crate::Metric>::Distance = diff.into();
+                    core_self.monotonic_add(core_diff).map(Into::into)
+                }
+
+                fn monotonic_sub(self, diff: Self::Distance) -> Option<Self> {
+                    let core_self: $core_ty = self.into();
+                    let core_diff: <$core_ty as $crate::Metric>::Distance = diff.into();
+                    core_self.monotonic_sub(core_diff).map(Into::into)
+                }
+
+                fn checked_diff(self, rhs: Self) -> Option<Self::Distance> {
+                    let core_self: $core_ty = self.into();
+                    let core_rhs: $core_ty = rhs.into();
+                    core_self.checked_diff(core_rhs).map(Into::into)
+                }
+            }
+        )+};
+    }
 
     #[cfg(feature = "std")]
     mod std {
@@ -419,16 +515,13 @@ mod impls {
 
         use super::*;
 
-        #[test]
-        fn f64_trunc() {
+        fn f64_inputs() -> [f64; 10] {
             let inf_p = 1.0 / 0.0;
             let inf_n = -1.0 / 0.0;
             let nan_p = inf_p * 0.0;
             let nan_n = inf_n * 0.0;
 
-            let inf_repr = f64::MAX;
-
-            let inputs = [
+            [
                 -84785459459999193493494549584.55,
                 -123.343435543559,
                 -0.0,
@@ -439,8 +532,13 @@ mod impls {
                 inf_n,
                 nan_p,
                 nan_n,
-            ];
+            ]
+        }
 
+        #[test]
+        fn f64_trunc() {
+            let inputs = f64_inputs();
+            let inf_repr = f64::MAX;
             let expected = [
                 -84785459459999193493494549584.0,
                 -123.0,
@@ -503,6 +601,94 @@ mod impls {
                 assert!(
                     (result == exp) || (result.is_nan() && exp.is_nan()),
                     "f32::trunc_scalar({input}) = {result}, expected {exp}",
+                );
+            }
+        }
+
+        #[test]
+        fn f64_checked_diff_commutative() {
+            let inputs = f64_inputs();
+
+            // commutative
+            for &a in &inputs {
+                for &b in &inputs {
+                    assert_eq!(a.checked_diff(b), b.checked_diff(a));
+                }
+            }
+        }
+
+        #[test]
+        fn f64_checked_diff_results() {
+            let inputs = f64_inputs();
+
+            let expected_shift1 = [
+                None, // `Some(84785459459999180000000000000.0)` lost necessary precision
+                Some(123.343435543559),
+                Some(0.0),
+                Some(8989898.444893489),
+                Some(147326823945396440000.0),
+                None,
+                None,
+                None,
+                None,
+                None,
+            ];
+            for ((&a, &b), exp) in inputs
+                .iter()
+                // rotate_left(1)
+                .zip(inputs.iter().skip(1).chain(&inputs[..1]))
+                .zip(expected_shift1)
+            {
+                let result = a.checked_diff(b);
+                assert_eq!(
+                    result, exp,
+                    "checked_diff({a}, {b}) = {result:?}, expected {exp:?}",
+                );
+            }
+
+            let expected_shift2 = [
+                Some(84785459459999180000000000000.0),
+                Some(123.343435543559),
+                Some(8989898.444893489),
+                Some(147326823945405430000.0),
+                None,
+                None,
+                None,
+                None,
+                None,
+            ];
+            for ((&a, &b), exp) in inputs
+                .iter()
+                // rotate_left(2)
+                .zip(inputs.iter().skip(2).chain(&inputs[..2]))
+                .zip(expected_shift2)
+            {
+                let result = a.checked_diff(b);
+                assert_eq!(
+                    result, exp,
+                    "checked_diff({a}, {b}) = {result:?}, expected {exp:?}",
+                );
+            }
+        }
+
+        #[test]
+        fn f64_checked_diff_double_regression() {
+            let cases = [
+                (84785459459999193493494549584.55, 123.343, None),
+                (10.0, 5.0, Some(5.0)),
+                (5.0, 0.0, Some(5.0)),
+                (5.0, 10.0, Some(5.0)),
+                (-10.0, 5.0, Some(15.0)),
+                (-5.0, 10.0, Some(15.0)),
+                (-5.0, 0.0, Some(5.0)),
+                (-10.0, -5.0, Some(5.0)),
+                (-5.0, -10.0, Some(5.0)),
+            ];
+            for (a, b, exp) in cases {
+                let result = a.checked_diff(b);
+                assert_eq!(
+                    result, exp,
+                    "checked_diff({a}, {b}) = {result:?}, expected {exp:?}",
                 );
             }
         }

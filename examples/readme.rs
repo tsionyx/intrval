@@ -209,6 +209,7 @@ fn set_operations() {
 
 /// Create and deconstruct discrete intervals.
 fn discrete_constructors_and_getters() {
+    use core::convert::identity;
     use intrval::{discrete::LinearSpace, interval};
 
     let space = LinearSpace::try_bounded(interval!([-2, 10]), 3_i8).unwrap();
@@ -216,19 +217,19 @@ fn discrete_constructors_and_getters() {
     assert_eq!(space.step(), &3);
     assert_eq!(space.into_parts(), (interval!([-2, 10]), 3));
     assert_eq!(
-        space.map(|x| x * 2).unwrap().into_parts(),
-        (interval!([-4, 20]), 6)
+        space.map(|x| x * 2, identity).unwrap().into_parts(),
+        (interval!([-4, 20]), 3)
     );
 
-    let space = LinearSpace::try_new(10_i8).unwrap();
+    let space = LinearSpace::<i8, i8>::try_new(10).unwrap();
     assert_eq!(space.bounds(), &interval!(U));
     assert_eq!(space.step(), &10);
     assert_eq!(space.into_parts(), (interval!(U), 10));
     assert_eq!(
-        space.map(|x| x + 2).unwrap().into_parts(),
+        space.map(|x| x + 2, |x| x + 2).unwrap().into_parts(),
         (interval!(U), 12)
     );
-    assert!(space.map(|x| x - 10).is_none());
+    assert!(space.map(identity, |x| x - 10).is_none());
 }
 
 /// Modify the space by doing some simple operations
@@ -258,7 +259,7 @@ fn discrete_arithmetic_operations() {
 fn discrete_iterators() {
     use intrval::{discrete::LinearSpace, interval};
 
-    let space = LinearSpace::try_bounded(interval!((20, =80)), 10_u16).unwrap();
+    let space = LinearSpace::try_bounded(interval!((20_u16, =80)), 10).unwrap();
     assert_eq!(
         space.try_into_forward_iter().unwrap().collect::<Vec<_>>(),
         [30, 40, 50, 60, 70, 80]
@@ -268,7 +269,7 @@ fn discrete_iterators() {
         [70, 80]
     );
 
-    let space_unbounded_lower = LinearSpace::try_bounded(interval!(<= 20), 5_u8).unwrap();
+    let space_unbounded_lower = LinearSpace::try_bounded(interval!(<= 20_u8), 5).unwrap();
     let _err = space_unbounded_lower.try_into_forward_iter().unwrap_err();
     assert_eq!(
         space_unbounded_lower
@@ -286,7 +287,7 @@ fn discrete_iterators() {
         [40, 30]
     );
 
-    let space_unbounded_upper = LinearSpace::try_bounded(interval!(> 100), 5_u8).unwrap();
+    let space_unbounded_upper = LinearSpace::try_bounded(interval!(> 100_u8), 5).unwrap();
     let _err = space_unbounded_upper.try_into_backward_iter().unwrap_err();
     assert_eq!(
         space_unbounded_upper
@@ -306,7 +307,7 @@ fn discrete_rounding() {
         interval,
     };
 
-    let space = LinearSpace::try_bounded(interval!(> 100), 4_u8).unwrap();
+    let space = LinearSpace::try_bounded(interval!(> 100_u8), 4).unwrap();
 
     assert_eq!(space.round(&102, DirectedMode::UP).unwrap(), 104);
     assert_eq!(space.round(&117, DirectedMode::DOWN).unwrap(), 116);

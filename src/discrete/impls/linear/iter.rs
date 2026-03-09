@@ -9,12 +9,12 @@ use super::{super::super::DiscreteOrdSet, LinearSpace};
 #[derive(Debug, Copy, Clone)]
 /// An iterator for a [`LinearSpace`] that can be either
 /// forward (increasing) or backward (decreasing).
-pub struct It<const INCREASING: bool, T> {
-    space: LinearSpace<T>,
+pub struct It<const INCREASING: bool, T, D> {
+    space: LinearSpace<T, D>,
     current: Option<T>,
 }
 
-impl<T> LinearSpace<T>
+impl<T, D> LinearSpace<T, D>
 where
     Self: DiscreteOrdSet<Point = T>,
 {
@@ -25,7 +25,7 @@ where
     ///
     /// Returns `Err(self)` if the minimum value of the space is infinite, i.e.,
     /// if the space is unbounded from below.
-    pub fn try_into_forward_iter(self) -> Result<It<true, T>, Self> {
+    pub fn try_into_forward_iter(self) -> Result<It<true, T, D>, Self> {
         match self.get_min() {
             Some(ValOrInf::Val(start)) => Ok(It {
                 space: self,
@@ -41,7 +41,7 @@ where
 
     /// Convert [`LinearSpace`] into an ordinary `Iterator`
     /// moving forward from the `max(start, min_value)`.
-    pub fn into_forward_iter_from(self, start: T) -> It<true, T>
+    pub fn into_forward_iter_from(self, start: T) -> It<true, T, D>
     where
         T: Ord,
     {
@@ -74,7 +74,7 @@ where
     ///
     /// Returns `Err(self)` if the maximum value of the space is infinite, i.e.,
     /// if the space is unbounded from above.
-    pub fn try_into_backward_iter(self) -> Result<It<false, T>, Self> {
+    pub fn try_into_backward_iter(self) -> Result<It<false, T, D>, Self> {
         match self.get_max() {
             Some(ValOrInf::Val(end)) => Ok(It {
                 space: self,
@@ -90,7 +90,7 @@ where
 
     /// Convert [`LinearSpace`] into a 'backward' `Iterator`
     /// moving backward from the `min(end, max_value)`.
-    pub fn into_backward_iter_up_to(self, end: T) -> It<false, T>
+    pub fn into_backward_iter_up_to(self, end: T) -> It<false, T, D>
     where
         T: Ord,
     {
@@ -117,9 +117,9 @@ where
     }
 }
 
-impl<T> Iterator for It<true, T>
+impl<T, D> Iterator for It<true, T, D>
 where
-    LinearSpace<T>: DiscreteOrdSet<Point = T>,
+    LinearSpace<T, D>: DiscreteOrdSet<Point = T>,
 {
     type Item = T;
 
@@ -133,9 +133,9 @@ where
     }
 }
 
-impl<T> Iterator for It<false, T>
+impl<T, D> Iterator for It<false, T, D>
 where
-    LinearSpace<T>: DiscreteOrdSet<Point = T>,
+    LinearSpace<T, D>: DiscreteOrdSet<Point = T>,
 {
     type Item = T;
 
@@ -149,7 +149,7 @@ where
     }
 }
 
-impl<const INCREASING: bool, T> FusedIterator for It<INCREASING, T> where Self: Iterator {}
+impl<const INCREASING: bool, T, D> FusedIterator for It<INCREASING, T, D> where Self: Iterator {}
 
 #[cfg(test)]
 mod tests {
@@ -165,7 +165,7 @@ mod tests {
 
     #[test]
     fn closed_interval_iter_forward_and_backward() {
-        let space = LinearSpace::try_bounded(interval!([12, 42]), 5_u8).unwrap();
+        let space = LinearSpace::try_bounded(interval!([12_u8, 42]), 5).unwrap();
 
         let full = [12, 17, 22, 27, 32, 37, 42];
         let full_rev = [42, 37, 32, 27, 22, 17, 12];
@@ -213,7 +213,7 @@ mod tests {
 
     #[test]
     fn half_bounded_below_can_only_iterate_forward() {
-        let space = LinearSpace::try_bounded(interval!(> -38), 16_i8).unwrap();
+        let space = LinearSpace::try_bounded(interval!(> -38_i8), 16).unwrap();
 
         let full = [-22, -6, 10, 26, 42, 58, 74, 90, 106, 122];
         let full_rev = [122, 106, 90, 74, 58, 42, 26, 10, -6, -22];
@@ -266,7 +266,7 @@ mod tests {
 
     #[test]
     fn half_bounded_above_can_only_iterate_backward() {
-        let space = LinearSpace::try_bounded(interval!(<= 66), 17_u8).unwrap();
+        let space = LinearSpace::try_bounded(interval!(<= 66_u8), 17).unwrap();
 
         let full = [15, 32, 49, 66];
         let full_rev = [66, 49, 32, 15];
@@ -319,7 +319,7 @@ mod tests {
 
     #[test]
     fn unbounded_does_not_iterate() {
-        let space = LinearSpace::try_new(1_u8).unwrap();
+        let space = LinearSpace::<u8, u8>::try_new(1).unwrap();
 
         let _err = space.try_into_forward_iter().unwrap_err();
         for start in [0, 14, 15, 16, 20, 40, 49, 65, 66, 67, 200, 255] {

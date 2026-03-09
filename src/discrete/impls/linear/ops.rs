@@ -14,7 +14,7 @@ use super::LinearSpace;
 // The implementation of `{Add, Sub}` are intentionally skipped because they have
 // richer semantics and could be assumed to also change the step size.
 
-impl<T> Shl<T> for LinearSpace<T>
+impl<T, D> Shl<T> for LinearSpace<T, D>
 where
     Interval<T>: Shl<T, Output = Interval<T>>,
 {
@@ -27,7 +27,7 @@ where
     }
 }
 
-impl<T> Shr<T> for LinearSpace<T>
+impl<T, D> Shr<T> for LinearSpace<T, D>
 where
     Interval<T>: Shr<T, Output = Interval<T>>,
 {
@@ -40,14 +40,15 @@ where
     }
 }
 
-impl<T, U, Z> Mul<U> for LinearSpace<T>
+impl<T, D, U, Y, Z> Mul<U> for LinearSpace<T, D>
 where
     T: Mul<U, Output = Z>,
     U: Clone,
     Interval<T>: Mul<U, Output = Interval<Z>>,
-    Z: Zero,
+    D: Mul<U, Output = Y>,
+    Y: Zero,
 {
-    type Output = Option<LinearSpace<Z>>;
+    type Output = Option<LinearSpace<Z, Y>>;
 
     /// Scale the bounds and step size using some scalar value.
     ///
@@ -63,14 +64,15 @@ where
     }
 }
 
-impl<T, U, Z> Div<U> for LinearSpace<T>
+impl<T, D, U, Y, Z> Div<U> for LinearSpace<T, D>
 where
     T: Div<U, Output = Z>,
     U: Clone + Zero,
     Interval<T>: Div<U, Output = Interval<Z>>,
-    Z: Zero,
+    D: Div<U, Output = Y>,
+    Y: Zero,
 {
-    type Output = Option<LinearSpace<Z>>;
+    type Output = Option<LinearSpace<Z, Y>>;
 
     /// Scale the bounds and step size using some scalar value.
     ///
@@ -92,15 +94,16 @@ where
     }
 }
 
-impl<T, U, Z> Mul<LinearSpace<U>> for LinearSpace<T>
+impl<T, D, U, V, Z, Y> Mul<LinearSpace<U, V>> for LinearSpace<T, D>
 where
     T: Mul<U, Output = Z>,
     Interval<T>: Mul<Interval<U>, Output = Interval<Z>>,
+    D: Mul<V, Output = Y>,
 {
-    type Output = LinearSpace<Z>;
+    type Output = LinearSpace<Z, Y>;
 
     /// Pairwise multiplies the bounds and step size of both spaces.
-    fn mul(self, rhs: LinearSpace<U>) -> Self::Output {
+    fn mul(self, rhs: LinearSpace<U, V>) -> Self::Output {
         let (bounds, step) = self.into_parts();
         let (rhs_bounds, rhs_step) = rhs.into_parts();
 

@@ -3,14 +3,15 @@ use core::cmp::Ordering;
 use crate::{
     bounds::Endpoint,
     helper::{OneOrPair, ValOrInf},
-    traits::{LinearIntRatio, MonotonicMeasure},
+    traits::{LinearIntRatio, MonotonicMeasure, Zero},
 };
 
 use super::{super::super::DiscreteOrdSet, LinearSpace};
 
-impl<T> LinearSpace<T>
+impl<T, D> LinearSpace<T, D>
 where
-    T: PartialOrd + Clone + MonotonicMeasure,
+    T: Clone + MonotonicMeasure<Distance = D>,
+    D: Clone,
 {
     fn min_value(&self) -> Option<ValOrInf<T>> {
         let (lower, upper) = self.bounds().as_ref_bounds().ok()?;
@@ -29,7 +30,8 @@ where
 
     fn max_value(&self) -> Option<ValOrInf<T>>
     where
-        T: LinearIntRatio,
+        T: Zero,
+        D: LinearIntRatio,
     {
         let min = self.min_value()?;
         let (lower, upper) = self.bounds().as_ref_bounds().ok()?;
@@ -68,9 +70,10 @@ where
     }
 }
 
-impl<T> DiscreteOrdSet for LinearSpace<T>
+impl<T, D> DiscreteOrdSet for LinearSpace<T, D>
 where
-    T: PartialOrd + Clone + LinearIntRatio + MonotonicMeasure,
+    T: Clone + Zero + MonotonicMeasure<Distance = D>,
+    D: Clone + LinearIntRatio,
 {
     type Point = T;
 
@@ -102,11 +105,11 @@ where
             }
         }
 
-        // the point should be a multiple of `step` from some origin
+        // the point should be a multiple of `step`-s from some origin
         let origin = min
             .into_val()
             .or_else(|| max.into_val())
-            .unwrap_or_else(|| self.step().clone());
+            .unwrap_or_else(T::zero);
         let stepped = find_stepped(point.clone(), origin, self.step());
         stepped == *point
     }
@@ -160,7 +163,7 @@ where
             let origin = min
                 .into_val()
                 .or_else(|| max.into_val())
-                .unwrap_or_else(|| self.step().clone());
+                .unwrap_or_else(T::zero);
             find_stepped(point.clone(), origin, self.step())
         };
 
@@ -228,19 +231,21 @@ enum Direction {
     Up,
 }
 
-fn find_stepped<T>(x: T, origin: T, step: &T) -> T
+fn find_stepped<T, D>(x: T, origin: T, step: &D) -> T
 where
-    T: Clone + PartialOrd + LinearIntRatio + MonotonicMeasure,
+    T: Clone + Zero + MonotonicMeasure<Distance = D>,
+    D: Clone + LinearIntRatio,
 {
     // try to reduce the number of possible steps
     // and the risk of possible over/under-flows
     // by finding a stepped version of point `zero` first,
     // then use it as a new `origin` to find the stepped version of `x`
-    let zero_shortcut = x.clone().monotonic_sub(x.clone()).and_then(|zero| {
+    let zero_shortcut = {
+        let zero = T::zero();
         find_stepped_inner(zero, origin.clone(), step)
             .and_then(|stepped_zero| find_stepped_inner(x.clone(), stepped_zero, step))
             .ok()
-    });
+    };
 
     zero_shortcut
         .unwrap_or_else(|| find_stepped_inner(x, origin, step).unwrap_or_else(|origin| origin))
@@ -253,42 +258,32 @@ where
 ///
 /// Return the `Err(origin)` as the last resort
 /// when the operations to find the stepped point overflowed.
-fn find_stepped_inner<T>(x: T, origin: T, step: &T) -> Result<T, T>
+fn find_stepped_inner<T, D>(x: T, origin: T, step: &D) -> Result<T, T>
 where
-    T: Clone + PartialOrd + LinearIntRatio + MonotonicMeasure,
+    T: Clone + MonotonicMeasure<Distance = D>,
+    D: Clone + LinearIntRatio,
 {
     let direction = x > origin;
 
     let (mut x, mut additional_steps) = (x, 0_usize);
     let distance = loop {
-        if direction {
-            let dist = x.clone().monotonic_sub(origin.clone());
-            if let Some(d) = dist {
-                break d;
-            }
+        let dist = x.clone().checked_diff(origin.clone());
+        if let Some(d) = dist {
+            break d;
+        }
 
-            let decr_x = x.monotonic_sub(step.clone());
-            if let Some(reduced_x) = decr_x {
-                x = reduced_x;
-                additional_steps += 1;
-            } else {
-                // if subtracting a `step` from `x` overflowed, we can just return the `origin`
-                return Err(origin);
-            }
+        let stepped_x = if direction {
+            x.monotonic_sub(step.clone())
         } else {
-            let dist = origin.clone().monotonic_sub(x.clone());
-            if let Some(d) = dist {
-                break d;
-            }
+            x.monotonic_add(step.clone())
+        };
 
-            let incr_x = x.monotonic_add(step.clone());
-            if let Some(increased_x) = incr_x {
-                x = increased_x;
-                additional_steps += 1;
-            } else {
-                // if summing a `step` to `x` overflowed, we can just return the `origin`
-                return Err(origin);
-            }
+        if let Some(changed) = stepped_x {
+            x = changed;
+            additional_steps += 1;
+        } else {
+            // if summing/subtracting a `step` to/from `x` overflowed, we can just return the `origin`
+            return Err(origin);
         }
     };
 
@@ -327,9 +322,10 @@ where
 /// first move in `dir` until `condition` is satisfied, then move one step in the
 /// opposite direction until the next point would not satisfy `condition`, and
 /// return the last point for which `condition` holds.
-fn find_best_step<T, F>(start: T, step: &T, dir: Direction, mut condition: F) -> Option<T>
+fn find_best_step<T, D, F>(start: T, step: &D, dir: Direction, mut condition: F) -> Option<T>
 where
-    T: Clone + MonotonicMeasure,
+    T: Clone + MonotonicMeasure<Distance = D>,
+    D: Clone,
     F: FnMut(&T) -> bool,
 {
     let mut current = start;
@@ -372,7 +368,7 @@ mod tests {
 
     type Int = i16;
 
-    fn even_numbers_space(bounds: Interval<Int>) -> LinearSpace<Int> {
+    fn even_numbers_space(bounds: Interval<Int>) -> LinearSpace<Int, Int> {
         LinearSpace::try_bounded(bounds, 2).unwrap()
     }
 
@@ -578,13 +574,13 @@ mod tests {
 
     #[test]
     fn overflow_while_computing_min() {
-        let space = LinearSpace::try_bounded(interval!(>250), 6_u8).unwrap();
+        let space = LinearSpace::try_bounded(interval!(>250_u8), 6).unwrap();
         assert!(space.get_min().is_none());
     }
 
     #[test]
     fn overflow_while_computing_max() {
-        let space = LinearSpace::try_bounded(interval!([250, 255]), 6_u8).unwrap();
+        let space = LinearSpace::try_bounded(interval!([250_u8, 255]), 6).unwrap();
         let min = space.get_min().unwrap();
         assert_eq!(min.get_val().unwrap(), &250);
         let max = space.get_max().unwrap();
@@ -593,7 +589,7 @@ mod tests {
 
     #[test]
     fn overflow_while_computing_nearest() {
-        let space = LinearSpace::try_bounded(interval!(>=250), 6_u8).unwrap();
+        let space = LinearSpace::try_bounded(interval!(>=250_u8), 6).unwrap();
         let min = space.get_min().unwrap();
         assert_eq!(min.get_val().unwrap(), &250);
         let max = space.get_max().unwrap();
@@ -605,7 +601,7 @@ mod tests {
 
     #[test]
     fn underflow_while_computing_nearest() {
-        let space = LinearSpace::try_bounded(interval!(<=10), 10_u8).unwrap();
+        let space = LinearSpace::try_bounded(interval!(<=10_u8), 10).unwrap();
         let min = space.get_min().unwrap();
         assert!(!min.is_finite());
         let max = space.get_max().unwrap();
@@ -617,13 +613,13 @@ mod tests {
 
     #[test]
     fn regression_for_included() {
-        let space_neg_inf = LinearSpace::try_bounded(interval!(<= -100), 29_i8).unwrap();
+        let space_neg_inf = LinearSpace::try_bounded(interval!(<= -100_i8), 29).unwrap();
         let min = space_neg_inf.get_min().unwrap();
         assert!(!min.is_finite());
         let max = space_neg_inf.get_max().unwrap();
         assert_eq!(max.get_val().unwrap(), &-100);
 
-        let space_pos_inf = LinearSpace::try_bounded(interval!(>=100), 28_i8).unwrap();
+        let space_pos_inf = LinearSpace::try_bounded(interval!(>=100_i8), 28).unwrap();
         let min = space_pos_inf.get_min().unwrap();
         assert_eq!(min.get_val().unwrap(), &100);
         let max = space_pos_inf.get_max().unwrap();
@@ -646,23 +642,30 @@ mod prop_test {
     #[allow(unused_imports)] // will be used internally by `prop_assert` macros
     use alloc::format;
 
-    use proptest::prelude::*;
+    use proptest::{
+        arbitrary::{ParamsFor, StrategyFor},
+        prelude::*,
+    };
 
-    use crate::{traits::Zero, Interval};
+    use crate::Interval;
 
     use super::*;
 
-    impl<T> Arbitrary for LinearSpace<T>
+    type LinearSpace<T> = super::LinearSpace<T, T>;
+
+    impl<T, D> Arbitrary for super::LinearSpace<T, D>
     where
-        T: Clone + Arbitrary + Zero + 'static,
+        T: Clone + Arbitrary + 'static,
+        D: Arbitrary + Zero,
+        StrategyFor<D>: 'static,
     {
-        type Parameters = <Interval<T> as Arbitrary>::Parameters;
+        type Parameters = (ParamsFor<Interval<T>>, ParamsFor<D>);
         type Strategy = BoxedStrategy<Self>;
 
-        fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        fn arbitrary_with((bounds_args, step_args): Self::Parameters) -> Self::Strategy {
             (
-                Interval::<T>::arbitrary_with(args),
-                T::arbitrary().prop_filter("only positive step", |x| {
+                Interval::<T>::arbitrary_with(bounds_args),
+                D::arbitrary_with(step_args).prop_filter("only positive step", |x| {
                     x.cmp_zero() == Some(Ordering::Greater)
                 }),
             )

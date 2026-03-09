@@ -9,14 +9,14 @@ mod ops;
 #[derive(Debug, Copy, Clone)]
 /// A discrete linear space representing
 /// a set of evenly spaced points within given bounds.
-pub struct LinearSpace<T> {
+pub struct LinearSpace<T, D> {
     bounds: Interval<T>,
-    step: T,
+    step: D,
 }
 
-impl<T> LinearSpace<T>
+impl<T, D> LinearSpace<T, D>
 where
-    T: Zero,
+    D: Zero,
 {
     /// Create a new linear space with the given `bounds` and `step` size.
     ///
@@ -37,7 +37,7 @@ where
     /// - if the `step` is strictly positive, `Some(Self)` is returned.
     /// - otherwise, i.e., for the non-positive (or non-comparable) `step`,
     ///   `None` is returned.
-    pub fn try_bounded(bounds: Interval<T>, step: T) -> Option<Self> {
+    pub fn try_bounded(bounds: Interval<T>, step: D) -> Option<Self> {
         step.cmp_zero()?
             .is_gt()
             .then_some(Self::new_raw(bounds, step))
@@ -58,52 +58,32 @@ where
     /// - if the `step` is strictly positive, `Some(Self)` is returned.
     /// - otherwise, i.e., for the non-positive (or non-comparable) `step`,
     ///   `None` is returned.
-    pub fn try_new(step: T) -> Option<Self> {
+    pub fn try_new(step: D) -> Option<Self> {
         Self::try_bounded(Interval::Full, step)
     }
 }
 
-impl<T> LinearSpace<T> {
-    const fn new_raw(bounds: Interval<T>, step: T) -> Self {
+impl<T, D> LinearSpace<T, D> {
+    const fn new_raw(bounds: Interval<T>, step: D) -> Self {
         Self { bounds, step }
     }
 }
 
 /// If the step size forced to be `>0`,
 /// the constructed values are always valid.
-macro_rules! impl_with_non_zero_step {
+macro_rules! impl_with_positive_step {
     ($($inner:ty => $non_zero:ty),+ $(,)?) => {$(
-        impl LinearSpace<$inner> {
-            #[doc = "Create a new linear space with the given `bounds` and `step` size."]
+        impl<T> LinearSpace<T, $inner> {
+            #[doc = "Create a new linear space with the given `bounds` and (wrapped in `NonZero`) `step` size."]
             #[doc = "\n"]
             #[doc = concat!("When the `step` is [`", stringify!($non_zero), "`]")]
             #[doc = "the result is guaranteed to be valid, as opposed to"]
             #[doc = "the generic constructor [`Self::try_bounded`]."]
-            pub const fn bounded(bounds: Interval<$inner>, step: $non_zero) -> Self {
+            pub const fn bounded(bounds: Interval<T>, step: $non_zero) -> Self {
                 Self::new_raw(bounds, step.get())
             }
 
-            #[doc = "Create a new unbounded linear space with `step` size."]
-            #[doc = "\n"]
-            #[doc = concat!("When the `step` is [`", stringify!($non_zero), "`]")]
-            #[doc = "the result is guaranteed to be valid, as opposed to"]
-            #[doc = "the generic constructor [`Self::try_new`]."]
-            pub const fn new(step: $non_zero) -> Self {
-                Self::bounded(Interval::Full, step)
-            }
-        }
-
-        impl LinearSpace<$non_zero> {
-            #[doc = "Create a new linear space with the given `bounds` and `step` size."]
-            #[doc = "\n"]
-            #[doc = concat!("When the `step` is [`", stringify!($non_zero), "`]")]
-            #[doc = "the result is guaranteed to be valid, as opposed to"]
-            #[doc = "the generic constructor [`Self::try_bounded`]."]
-            pub const fn bounded(bounds: Interval<$non_zero>, step: $non_zero) -> Self {
-                Self::new_raw(bounds, step)
-            }
-
-            #[doc = "Create a new unbounded linear space with `step` size."]
+            #[doc = "Create a new unbounded linear space with (wrapped in `NonZero`) `step` size."]
             #[doc = "\n"]
             #[doc = concat!("When the `step` is [`", stringify!($non_zero), "`]")]
             #[doc = "the result is guaranteed to be valid, as opposed to"]
@@ -115,7 +95,7 @@ macro_rules! impl_with_non_zero_step {
     )+}
 }
 
-impl_with_non_zero_step! {
+impl_with_positive_step! {
     u8 => NonZeroU8,
     u16 => NonZeroU16,
     u32 => NonZeroU32,
@@ -124,55 +104,65 @@ impl_with_non_zero_step! {
     usize => NonZeroUsize,
 }
 
-impl<T> LinearSpace<T> {
+impl<T, D> LinearSpace<T, D> {
     /// Get the bounds as a reference to the inner [`Interval`].
     pub const fn bounds(&self) -> &Interval<T> {
         &self.bounds
     }
 
     /// Get the step size.
-    pub const fn step(&self) -> &T {
+    pub const fn step(&self) -> &D {
         &self.step
     }
 
     /// Convert the space into its components,
     /// i.e., the bounds and step size.
-    pub fn into_parts(self) -> (Interval<T>, T) {
+    pub fn into_parts(self) -> (Interval<T>, D) {
         (self.bounds, self.step)
     }
 
     /// Convert to a [`LinearSpace`] of another type using
-    /// the given mapping function for the bounds and step size.
+    /// the two mapping functions (one for the bounds and another for step size).
     ///
     /// # Returns
     ///
-    /// If the mapping function produces a valid `step` value (i.e., a positive number)
-    /// then `Some(LinearSpace<U>)` is returned, otherwise `None` is returned.
-    pub fn map<U, F>(self, f: F) -> Option<LinearSpace<U>>
+    /// If the `f_step` function produces a valid `step` value (i.e., a positive number)
+    /// then `Some(LinearSpace<U, V>)` is returned, otherwise `None` is returned.
+    pub fn map<U, V, F1, F2>(self, f_bounds: F1, f_step: F2) -> Option<LinearSpace<U, V>>
     where
-        F: Fn(T) -> U,
-        U: Zero,
+        F1: Fn(T) -> U,
+        F2: Fn(D) -> V,
+        V: Zero,
     {
         let (bounds, step) = self.into_parts();
-        let bounds = bounds.map(&f);
-        let step = f(step);
+        let bounds = bounds.map(&f_bounds);
+        let step = f_step(step);
         LinearSpace::try_bounded(bounds, step)
     }
 }
 
-impl<T: PartialOrd> PartialEq for LinearSpace<T> {
+impl<T, D> PartialEq for LinearSpace<T, D>
+where
+    T: PartialOrd,
+    D: PartialEq,
+{
     fn eq(&self, other: &Self) -> bool {
         self.bounds() == other.bounds() && self.step() == other.step()
     }
 }
 
-impl<T: PartialOrd> Eq for LinearSpace<T> {}
+impl<T, D> Eq for LinearSpace<T, D>
+where
+    T: PartialOrd,
+    D: Eq,
+{
+}
 
 #[cfg(test)]
 mod tests {
     use core::ops::Sub as _;
 
-    use crate::{impl_linear_int, impl_metric, impl_zero, impl_linear, traits::MonotonicMeasure};
+    use crate::{impl_linear, impl_linear_int, impl_metric, impl_monotonic, impl_zero};
 
     type F32 = ordered_float::OrderedFloat<f32>;
     type F64 = ordered_float::OrderedFloat<f64>;
@@ -181,24 +171,5 @@ mod tests {
     impl_metric!(using sub for F32, F64);
     impl_linear!(F32, F64);
     impl_linear_int!(F32 as f32, F64 as f64);
-
-    impl MonotonicMeasure for F32 {
-        fn monotonic_add(self, rhs: Self) -> Option<Self> {
-            self.0.monotonic_add(rhs.0).map(Self)
-        }
-
-        fn monotonic_sub(self, rhs: Self) -> Option<Self> {
-            self.0.monotonic_sub(rhs.0).map(Self)
-        }
-    }
-
-    impl MonotonicMeasure for F64 {
-        fn monotonic_add(self, rhs: Self) -> Option<Self> {
-            self.0.monotonic_add(rhs.0).map(Self)
-        }
-
-        fn monotonic_sub(self, rhs: Self) -> Option<Self> {
-            self.0.monotonic_sub(rhs.0).map(Self)
-        }
-    }
+    impl_monotonic!(F32 as f32, F64 as f64);
 }

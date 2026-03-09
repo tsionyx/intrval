@@ -2,7 +2,9 @@ use core::fmt::Debug;
 
 use crate::interval;
 
-use super::{super::LinearSpace, *};
+use super::*;
+
+type LinearSpace<T> = super::super::LinearSpace<T, T>;
 
 fn half_open_multiples_of_3() -> LinearSpace<i32> {
     LinearSpace::try_bounded(interval!((-20, =40)), 3).unwrap()
