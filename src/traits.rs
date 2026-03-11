@@ -6,7 +6,8 @@ use core::cmp::Ordering;
 ///
 /// Currently, it is implemented for all core primitive numeric types
 /// (like `iN`, `uN` and `fN` where N is the size in bits)
-/// as well as for `Duration`.
+/// as well as for `Duration` and, when the `std` feature is enabled,
+/// for certain `std` types such as `SystemTime`.
 pub trait Zero {
     /// Produce the zero (neutral in terms of sum) element of a type.
     fn zero() -> Self;
@@ -122,7 +123,7 @@ pub trait MonotonicMeasure: Metric + PartialOrd {
 mod impls {
     use core::{ops::Sub as _, time::Duration};
 
-    use super::{LinearIntRatio, MonotonicMeasure, Zero};
+    use super::{Linear, LinearIntRatio, MonotonicMeasure, Zero};
 
     #[macro_export]
     /// Helper macro to implement [`Zero`][crate::Zero] for numeric types
@@ -165,6 +166,7 @@ mod impls {
     }
     impl_metric!(using saturating_sub for i8, u8, i16, u16, i32, u32, i64, u64, isize, usize, i128, u128);
     impl_metric!(using sub for f32, f64);
+    impl_metric!(using saturating_sub for Duration);
 
     #[macro_export]
     /// Helper macro to implement [`Linear`][crate::Linear] for numeric types
@@ -187,6 +189,35 @@ mod impls {
 
     impl_linear!(i8, u8, i16, u16, i32, u32, i64, u64, isize, usize, i128, u128);
     impl_linear!(f32, f64);
+
+    impl Linear for Duration {
+        type Scalar = u128;
+
+        fn mul_scalar(self, scalar: Self::Scalar) -> Self {
+            let total_nanos: u128 = self.as_nanos().saturating_mul(scalar);
+            u64::try_from(total_nanos)
+                .ok()
+                .map_or(Self::MAX, Self::from_nanos)
+        }
+
+        fn get_ratio(self, rhs: Self) -> Self::Scalar {
+            if rhs == Self::zero() {
+                Self::Scalar::MAX
+            } else {
+                self.as_nanos() / rhs.as_nanos()
+            }
+        }
+    }
+
+    impl LinearIntRatio for Duration {
+        fn trunc_scalar(ratio: Self::Scalar) -> Self::Scalar {
+            ratio
+        }
+
+        fn int_ratio(self, other: Self) -> Self::Scalar {
+            self.get_ratio(other)
+        }
+    }
 
     /// Implement `LinearIntRatio` for integer types by simply returning the ratio as is.
     macro_rules! impl_linear_int_for_int {
@@ -492,9 +523,9 @@ mod impls {
         use core::time::Duration;
         use std::time::{Instant, SystemTime};
 
-        impl_zero!(using SystemTime::UNIX_EPOCH => SystemTime);
+        use super::super::{Metric, MonotonicMeasure};
 
-        use super::super::Metric;
+        impl_zero!(using SystemTime::UNIX_EPOCH => SystemTime);
 
         impl Metric for Instant {
             type Distance = Duration;
@@ -511,6 +542,45 @@ mod impls {
             fn distance(&self, rhs: &Self) -> Self::Distance {
                 self.duration_since(*rhs)
                     .unwrap_or_else(|err| err.duration())
+            }
+        }
+
+        impl MonotonicMeasure for Instant {
+            fn monotonic_add(self, diff: Self::Distance) -> Option<Self> {
+                self.checked_add(diff)
+            }
+
+            fn monotonic_sub(self, diff: Self::Distance) -> Option<Self> {
+                self.checked_sub(diff)
+            }
+
+            fn checked_diff(self, rhs: Self) -> Option<Self::Distance> {
+                Some(self.distance(&rhs))
+            }
+
+            fn origin() -> Option<Self> {
+                // FIXME: `impl_zero!(using zero_instant() => Instant)`
+                // or a proper `MonotonicMeasure::origin` for `Instant`.
+                // Otherwise, the `LinearSpace<Instant, Duration>` cannot be used to round `Instant` values.
+                None
+            }
+        }
+
+        impl MonotonicMeasure for SystemTime {
+            fn monotonic_add(self, diff: Self::Distance) -> Option<Self> {
+                self.checked_add(diff)
+            }
+
+            fn monotonic_sub(self, diff: Self::Distance) -> Option<Self> {
+                self.checked_sub(diff)
+            }
+
+            fn checked_diff(self, rhs: Self) -> Option<Self::Distance> {
+                Some(self.distance(&rhs))
+            }
+
+            fn origin() -> Option<Self> {
+                Some(Self::UNIX_EPOCH)
             }
         }
     }

@@ -1215,3 +1215,83 @@ mod random_rounds {
         }
     }
 }
+
+#[cfg(feature = "std")]
+mod time {
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+    use super::{super::super::LinearRoundable as _, *};
+
+    /// Helper function to create a [`SystemTime`]
+    /// at a specified number of seconds after [`UNIX_EPOCH`].
+    fn time_at(seconds: u64) -> SystemTime {
+        UNIX_EPOCH + Duration::from_secs(seconds)
+    }
+
+    #[test]
+    fn system_time_round_with_step() {
+        // Time at 2023-07-15 10:30:45 UTC
+        let time = time_at(1_689_417_045);
+
+        // Round to nearest 15 minutes
+        let step = Duration::from_secs(60 * 15);
+
+        // Down/ToZero: should round to 10:30:00
+        let rounded = time.round(step, DirectedMode::FLOOR).unwrap();
+        let expected = time_at(1_689_417_000); // 10:30:00
+        assert_eq!(rounded, expected, "Floor rounding failed");
+        assert_eq!(
+            rounded,
+            time.round(step, DirectedMode::TowardZero).unwrap(),
+            "TowardZero rounding failed"
+        );
+
+        // Up: should round to 10:45:00
+        let rounded = time.round(step, DirectedMode::CEILING).unwrap();
+        let expected = time_at(1_689_417_900); // 10:45:00
+        assert_eq!(rounded, expected, "Up rounding failed");
+
+        // Nearest: should round to 10:30:00 (45s is closer to 30m than 45m)
+        let rounded = time
+            .round(step, NearestMode(DirectedMode::TRUNCATE))
+            .unwrap();
+        let expected = time_at(1_689_417_000); // 10:30:00
+        assert_eq!(rounded, expected, "Nearest rounding failed");
+
+        // Test with a different time where nearest should round up
+        // Time at 2023-07-15 10:37:30 UTC (closer to 10:45:00 than to 10:30:00)
+        let time_middle = time + Duration::from_secs(7 * 60 - 15); // 10:37:30
+        let rounded = time_middle
+            .round(step, NearestMode(DirectedMode::CEILING))
+            .unwrap();
+        let expected = time_at(1_689_417_900); // 10:45:00
+        assert_eq!(
+            expected.duration_since(time_middle).unwrap(),
+            Duration::from_secs(7 * 60 + 30)
+        );
+        assert_eq!(rounded, expected, "Nearest rounding (up) failed");
+
+        let rounded = time_middle
+            .round(step, NearestMode(DirectedMode::FLOOR))
+            .unwrap();
+        let expected = time_at(1_689_417_000); // 10:30:00
+        assert_eq!(
+            time_middle.duration_since(expected).unwrap(),
+            Duration::from_secs(7 * 60 + 30)
+        );
+        assert_eq!(rounded, expected, "Nearest rounding (down) failed");
+
+        // Test with a different time where nearest should round down
+        // Time at 2023-07-15 10:37:29 UTC (closer to 10:30:00 than to 10:45:00)
+        let time_middle = time_middle - Duration::from_secs(1); // 10:37:29
+        let rounded = time_middle
+            .round(step, NearestMode(DirectedMode::FLOOR))
+            .unwrap();
+        let expected = time_at(1_689_417_000); // 10:30:00
+        assert_eq!(
+            time_middle.duration_since(expected).unwrap(),
+            Duration::from_secs(7 * 60 + 29)
+        );
+        assert_eq!(rounded, expected, "Nearest rounding (down) failed");
+    }
+}
