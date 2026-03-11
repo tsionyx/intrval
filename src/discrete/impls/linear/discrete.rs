@@ -30,7 +30,6 @@ where
 
     fn max_value(&self) -> Option<ValOrInf<T>>
     where
-        T: Zero,
         D: LinearIntRatio,
     {
         let min = self.min_value()?;
@@ -109,6 +108,7 @@ where
         let origin = min
             .into_val()
             .or_else(|| max.into_val())
+            .or_else(T::origin)
             .unwrap_or_else(T::zero);
         let stepped = find_stepped(point.clone(), origin, self.step());
         stepped == *point
@@ -163,6 +163,7 @@ where
             let origin = min
                 .into_val()
                 .or_else(|| max.into_val())
+                .or_else(T::origin)
                 .unwrap_or_else(T::zero);
             find_stepped(point.clone(), origin, self.step())
         };
@@ -233,19 +234,18 @@ enum Direction {
 
 fn find_stepped<T, D>(x: T, origin: T, step: &D) -> T
 where
-    T: Clone + Zero + MonotonicMeasure<Distance = D>,
+    T: Clone + MonotonicMeasure<Distance = D>,
     D: Clone + LinearIntRatio,
 {
     // try to reduce the number of possible steps
     // and the risk of possible over/under-flows
     // by finding a stepped version of point `zero` first,
     // then use it as a new `origin` to find the stepped version of `x`
-    let zero_shortcut = {
-        let zero = T::zero();
+    let zero_shortcut = T::origin().and_then(|zero| {
         find_stepped_inner(zero, origin.clone(), step)
             .and_then(|stepped_zero| find_stepped_inner(x.clone(), stepped_zero, step))
             .ok()
-    };
+    });
 
     zero_shortcut
         .unwrap_or_else(|| find_stepped_inner(x, origin, step).unwrap_or_else(|origin| origin))

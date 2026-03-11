@@ -110,6 +110,13 @@ pub trait MonotonicMeasure: Metric + PartialOrd {
     /// - `None` if overflow or loss of precision occurs, i.e.,
     ///   if the result is not a valid distance between the two points.
     fn checked_diff(self, rhs: Self) -> Option<Self::Distance>;
+
+    /// Get the origin (zero) point of the type, if it exists.
+    ///
+    /// It is optional but allows to shortcut some operations,
+    /// e.g., calculating the distance to the origin point
+    /// is often simpler than calculating the distance between two arbitrary points.
+    fn origin() -> Option<Self>;
 }
 
 mod impls {
@@ -363,6 +370,8 @@ mod impls {
                         rhs.checked_sub(self)
                     }
                 }
+
+                fn origin() -> Option<Self> { Some(0) }
             }
         )+};
     }
@@ -433,6 +442,8 @@ mod impls {
                         )).then_some(result)
                     }
                 }
+
+                fn origin() -> Option<Self> { Some(0.0) }
             }
         )+};
     }
@@ -468,6 +479,10 @@ mod impls {
                     let core_rhs: $core_ty = rhs.into();
                     core_self.checked_diff(core_rhs).map(Into::into)
                 }
+
+                fn origin() -> Option<Self> {
+                    <$core_ty>::origin().map(Into::into)
+                }
             }
         )+};
     }
@@ -478,8 +493,6 @@ mod impls {
         use std::time::{Instant, SystemTime};
 
         impl_zero!(using SystemTime::UNIX_EPOCH => SystemTime);
-        // TODO: create a notion of zero instant
-        //impl_zero!(using zero_instant() => Instant);
 
         use super::super::Metric;
 
