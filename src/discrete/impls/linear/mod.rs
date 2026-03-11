@@ -170,11 +170,12 @@ impl<T: PartialOrd> Eq for LinearSpace<T> {}
 
 #[cfg(test)]
 mod tests {
-    use crate::{impl_int_div, impl_measure, traits::MonotonicLinear};
+    use crate::{impl_int_div, impl_measure, impl_zero, traits::MonotonicLinear};
 
     type F32 = ordered_float::OrderedFloat<f32>;
     type F64 = ordered_float::OrderedFloat<f64>;
 
+    impl_zero!(using ordered_float::OrderedFloat(0.0) => F32, F64);
     impl_measure!(F32, F64);
     impl_int_div!(F32 as f32, F64 as f64);
 

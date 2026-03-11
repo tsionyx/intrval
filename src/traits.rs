@@ -7,29 +7,15 @@ use core::{
 /// The trait to define scalar (single-dimension) types
 /// with a dedicated origin (zero) point.
 ///
-/// Currently, it is blanket-implemented for all types that implement `TryFrom<u8>`,
-/// which covers at least all core primitive numeric types
-/// (like `iN`, `uN` and `fN` where N is the size in bits).
+/// Currently, it is implemented for all core primitive numeric types
+/// (like `iN`, `uN` and `fN` where N is the size in bits)
+/// as well as for `Duration`.
 pub trait Zero {
     /// Produce the zero (neutral in terms of sum) element of a type.
     fn zero() -> Self;
 
     /// Determines how the value is comparable to zero.
     fn cmp_zero(&self) -> Option<Ordering>;
-}
-
-impl<T> Zero for T
-where
-    T: TryFrom<u8> + PartialOrd,
-{
-    fn zero() -> Self {
-        Self::try_from(0).unwrap_or_else(|_| panic!("conversion from 0 failed"))
-    }
-
-    fn cmp_zero(&self) -> Option<Ordering> {
-        let zero = Self::try_from(0).ok()?;
-        self.partial_cmp(&zero)
-    }
 }
 
 /// The ability to have a distance between two values of the type.
@@ -107,7 +93,30 @@ pub trait MonotonicLinear: Linear + PartialOrd {
 }
 
 mod impls {
+    use core::time::Duration;
+
     use super::{IntDiv, MonotonicLinear, Ratio, Zero};
+
+    #[macro_export]
+    /// Helper macro to implement [`Zero`][crate::Zero] for numeric types
+    /// using provided zero value and the natural ordering of the type.
+    macro_rules! impl_zero {
+        (using $z:expr => $($n:ty),+ $(,)?) => {$(
+            impl $crate::Zero for $n {
+                fn zero() -> Self {
+                    $z
+                }
+
+                fn cmp_zero(&self) -> Option<core::cmp::Ordering> {
+                    self.partial_cmp(&$z)
+                }
+            }
+        )+};
+    }
+
+    impl_zero!(using 0 => i8, u8, i16, u16, i32, u32, i64, u64, isize, usize, i128, u128);
+    impl_zero!(using 0.0 => f32, f64);
+    impl_zero!(using Duration::ZERO => Duration);
 
     #[macro_export]
     /// Helper macro to implement `Measure` for numeric types
@@ -120,21 +129,6 @@ mod impls {
         )+};
     }
     impl_measure!(i8, u8, i16, u16, i32, u32, i64, u64, isize, usize, i128, u128, f32, f64);
-
-    #[cfg(feature = "std")]
-    mod impls_std {
-        use core::time::Duration;
-        use std::time::{Instant, SystemTime};
-
-        use super::super::Measure;
-
-        impl Measure for Instant {
-            type Distance = Duration;
-        }
-        impl Measure for SystemTime {
-            type Distance = Duration;
-        }
-    }
 
     /// Implement `IntDiv` for integer types by simply returning the ratio as is.
     macro_rules! impl_int_div_for_int {
@@ -330,6 +324,25 @@ mod impls {
     }
 
     impl_monotonic_for_float!(f32, f64);
+
+    #[cfg(feature = "std")]
+    mod std {
+        use core::time::Duration;
+        use std::time::{Instant, SystemTime};
+
+        impl_zero!(using SystemTime::UNIX_EPOCH => SystemTime);
+        // TODO: create a notion of zero instant
+        //impl_zero!(using zero_instant() => Instant);
+
+        use super::super::Measure;
+
+        impl Measure for Instant {
+            type Distance = Duration;
+        }
+        impl Measure for SystemTime {
+            type Distance = Duration;
+        }
+    }
 
     #[cfg(test)]
     mod tests {
