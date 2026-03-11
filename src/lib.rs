@@ -22,5 +22,5 @@ pub use self::{
     interval::Interval,
     set::SetOps,
     singleton::{Singleton, SingletonBounds},
-    traits::{IntDiv, Linear, Metric, MonotonicMeasure, Zero},
+    traits::{Linear, LinearIntRatio, Metric, MonotonicMeasure, Zero},
 };

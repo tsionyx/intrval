@@ -1,8 +1,5 @@
 //! The traits describing some numerical behaviour.
-use core::{
-    cmp::Ordering,
-    ops::{Div, Mul},
-};
+use core::cmp::Ordering;
 
 /// The trait to define scalar (single-dimension) types
 /// with a dedicated origin (zero) point.
@@ -48,34 +45,20 @@ pub trait Linear: Metric {
     fn get_ratio(self, rhs: Self) -> Self::Scalar;
 }
 
-/// The result of division `T/T`.
-pub type Ratio<T> = <T as Div<T>>::Output;
+/// Extend a [`Linear`] with integer ratio.
+pub trait LinearIntRatio: Linear {
+    /// Ensure the ratio to be integer by rounding it.
+    ///
+    /// The actual direction of the rounding is irrelevant, since the rounding algorithm
+    /// will adjust the value anyway. By convention it is better to use
+    /// the truncation (rounding towards zero).
+    fn trunc_scalar(ratio: Self::Scalar) -> Self::Scalar;
 
-impl<T> Linear for T
-where
-    T: Metric + Mul<Ratio<Self>, Output = Self> + Div,
-{
-    type Scalar = Ratio<Self>;
-
-    fn mul_scalar(self, scalar: Self::Scalar) -> Self {
-        self.mul(scalar)
-    }
-
-    fn get_ratio(self, rhs: Self) -> Self::Scalar {
-        self.div(rhs)
-    }
-}
-
-/// Extend a [self-divisible type][Div] with integer division.
-pub trait IntDiv: Div + Sized {
-    /// Ensure the ratio to be integer by rounding it (towards zero).
-    fn round_to_int(r: Ratio<Self>) -> Ratio<Self>;
-
-    /// Perform integer division by rounding the ratio to integer (towards zero)
-    /// using the [`Self::round_to_int`] method.
-    fn int_div(self, other: Self) -> Ratio<Self> {
-        Self::round_to_int(self / other)
-    }
+    /// Extension of the [`Linear::get_ratio`] method to get an integer ratio.
+    ///
+    /// Performs integer division by rounding the ratio to integer
+    /// using the [`Self::trunc_scalar`] method.
+    fn int_ratio(self, other: Self) -> Self::Scalar;
 }
 
 /// Extension of [linear types][Linear] with monotonic addition and subtraction.
@@ -123,7 +106,7 @@ pub trait MonotonicMeasure: Metric + PartialOrd {
 mod impls {
     use core::{ops::Sub as _, time::Duration};
 
-    use super::{IntDiv, MonotonicMeasure, Ratio, Zero};
+    use super::{LinearIntRatio, MonotonicMeasure, Zero};
 
     #[macro_export]
     /// Helper macro to implement [`Zero`][crate::Zero] for numeric types
@@ -167,62 +150,87 @@ mod impls {
     impl_metric!(using saturating_sub for i8, u8, i16, u16, i32, u32, i64, u64, isize, usize, i128, u128);
     impl_metric!(using sub for f32, f64);
 
-    /// Implement `IntDiv` for integer types by simply returning the ratio as is.
-    macro_rules! impl_int_div_for_int {
-        ($($int:ty),+ $(,)?) => {$(
-            impl IntDiv for $int {
-                fn round_to_int(r: Ratio<Self>) -> Ratio<Self> {
-                    r
+    #[macro_export]
+    /// Helper macro to implement [`Linear`][crate::Linear] for numeric types
+    /// which implement `core::ops::{Mul, Div}`.
+    macro_rules! impl_linear {
+        ($($t:ty),+ $(,)?) => {$(
+            impl $crate::Linear for $t {
+                type Scalar = <Self as core::ops::Div>::Output;
+
+                fn mul_scalar(self, scalar: Self::Scalar) -> Self {
+                    self * scalar
+                }
+
+                fn get_ratio(self, rhs: Self) -> Self::Scalar {
+                    self / rhs
                 }
             }
         )+};
     }
-    impl_int_div_for_int!(i8, u8, i16, u16, i32, u32, i64, u64, isize, usize, i128, u128);
+
+    impl_linear!(i8, u8, i16, u16, i32, u32, i64, u64, isize, usize, i128, u128);
+    impl_linear!(f32, f64);
+
+    /// Implement `LinearIntRatio` for integer types by simply returning the ratio as is.
+    macro_rules! impl_linear_int_for_int {
+        ($($int:ty),+ $(,)?) => {$(
+            impl LinearIntRatio for $int {
+                fn trunc_scalar(ratio: Self::Scalar) -> Self::Scalar { ratio }
+                fn int_ratio(self, other: Self) -> Self::Scalar { self / other }
+            }
+        )+};
+    }
+    impl_linear_int_for_int!(i8, u8, i16, u16, i32, u32, i64, u64, isize, usize, i128, u128);
 
     #[cfg(feature = "std")]
-    /// Implement `IntDiv` for floating-point types by truncating the ratio.
+    /// Implement `LinearIntRatio` for floating-point types by truncating the ratio.
     ///
     /// # Note
     ///
     /// - the `NaN` values will be treated as zero;
     /// - infinite values are clamped to the representable finite range for this type;
     ///   (i.e., `+inf` is clamped to `MAX` and `-inf` is clamped to `MIN`).
-    macro_rules! impl_int_div_for_float {
+    macro_rules! impl_linear_int_for_float {
         ($($f:ty => $_int_ty:ty),+ $(,)?) => {$(
-            impl IntDiv for $f {
-                fn round_to_int(r: Ratio<Self>) -> Ratio<Self> {
+            impl LinearIntRatio for $f {
+                fn trunc_scalar(ratio: Self::Scalar) -> Self::Scalar {
                     #![allow(
                         trivial_numeric_casts,
                         clippy::as_conversions,
                     )]
-                    if r.is_nan() {
-                        0.0 as Ratio<Self>
-                    } else if r.is_infinite() {
-                        if r.is_sign_positive() {
-                            Ratio::<Self>::MAX
+                    if ratio.is_nan() {
+                        0.0 as Self::Scalar
+                    } else if ratio.is_infinite() {
+                        if ratio.is_sign_positive() {
+                            Self::Scalar::MAX
                         } else {
-                            Ratio::<Self>::MIN
+                            Self::Scalar::MIN
                         }
                     } else {
-                        r.trunc()
+                        ratio.trunc()
                     }
+                }
+
+                fn int_ratio(self, other: Self) -> Self::Scalar {
+                    Self::trunc_scalar(self / other)
                 }
             }
         )+};
     }
 
     #[cfg(not(feature = "std"))]
-    /// Implement `IntDiv` for floating-point types by truncating the ratio.
+    /// Implement `LinearIntRatio` for floating-point types by truncating the ratio.
     ///
     /// # Note
     ///
     /// - the `NaN` values will be treated as zero;
     /// - infinite values are clamped to the representable finite range for this type;
     ///   (i.e., `+inf` is clamped to `MAX` and `-inf` is clamped to `MIN`).
-    macro_rules! impl_int_div_for_float {
+    macro_rules! impl_linear_int_for_float {
         ($($f:ty => $int_ty:ty),+ $(,)?) => {$(
-            impl IntDiv for $f {
-                fn round_to_int(r: Ratio<Self>) -> Ratio<Self> {
+            impl LinearIntRatio for $f {
+                fn trunc_scalar(ratio: Self::Scalar) -> Self::Scalar {
                     #![allow(
                         trivial_numeric_casts,
                         clippy::as_conversions,
@@ -230,15 +238,15 @@ mod impls {
                         clippy::cast_precision_loss,
                         clippy::cast_sign_loss,
                     )]
-                    if r.is_nan() {
-                        0.0 as Ratio<Self>
+                    if ratio.is_nan() {
+                        0.0 as Self::Scalar
                     } else {
                         // `f{32,64}.trunc()` is still unstable in `core` as of _Rust 1.93_
                         // (https://github.com/rust-lang/rust/issues/137578),
                         // so emulate it with casting to integer and back.
                         // This way will clamp some values with extremely large
                         // absolute value (including +/- infinity) into integer range as well.
-                        let sign = r.is_sign_positive();
+                        let sign = ratio.is_sign_positive();
 
                         let truncated_abs = {
                             let r_abs_finite = {
@@ -247,20 +255,20 @@ mod impls {
                                 // Note: the `{float}::abs()` was only stabilized in core in _Rust 1.84_
                                 // (https://github.com/rust-lang/rust/releases/tag/1.84.0)
                                 let r_abs = if sign {
-                                    r
+                                    ratio
                                 } else {
-                                    -r   // use unary negation instead of calling `abs()`
+                                    -ratio   // use unary negation instead of calling `abs()`
                                 };
 
                                 // return the clamped value when `|r|` is infinity
                                 if r_abs.is_infinite() {
-                                    Ratio::<Self>::MAX
+                                    Self::Scalar::MAX
                                 } else {
                                     r_abs
                                 }
                             };
 
-                            let max = <$int_ty>::MAX as Ratio<Self>;
+                            let max = <$int_ty>::MAX as Self::Scalar;
                             if r_abs_finite >= max {
                                 // return unchanged when `|r| >= 2^mantissa_bits`
                                 // (it has no fractional part in IEEE-754)
@@ -269,7 +277,7 @@ mod impls {
                                 // the cast to integer will truncate the fractional part,
                                 // and the cast back to float will restore the original integer value
                                 // (it should be within the range of the integer type in this branch)
-                                (r_abs_finite as $int_ty) as Ratio<Self>
+                                (r_abs_finite as $int_ty) as Self::Scalar
                             }
                         };
 
@@ -280,16 +288,20 @@ mod impls {
                         }
                     }
                 }
+
+                fn int_ratio(self, other: Self) -> Self::Scalar {
+                    Self::trunc_scalar(self / other)
+                }
             }
         )+};
     }
 
-    impl_int_div_for_float!(f32 => i64, f64 => i128);
+    impl_linear_int_for_float!(f32 => i64, f64 => i128);
 
     #[macro_export]
-    /// Helper macro to implement `IntDiv` for numeric types
+    /// Helper macro to implement `LinearIntRatio` for numeric types
     /// which ratio could be converted into/from core numeric types that
-    /// already implement `IntDiv`.
+    /// already implement `LinearIntRatio`.
     ///
     /// The following underlying primitive types are now supported
     /// (and can be used on the right hand of `as` in the macro):
@@ -305,15 +317,17 @@ mod impls {
     ///
     /// The naive blanket impl approach `impl for T where T: Into<f64> + From<f64>`
     /// does not work due to orphan rule.
-    macro_rules! impl_int_div {
+    macro_rules! impl_linear_int {
         ($($num_ty:ty as $core_ty:ty),+ $(,)?) => {$(
-            impl $crate::IntDiv for $num_ty {
-                fn round_to_int(
-                    r: <Self as core::ops::Div>::Output,
-                ) -> <Self as core::ops::Div>::Output {
-                    let core_num_ratio = r.into();
-                    let ratio_rounded = <$core_ty>::round_to_int(core_num_ratio);
+            impl $crate::LinearIntRatio for $num_ty {
+                fn trunc_scalar(ratio: Self::Scalar) -> Self::Scalar {
+                    let core_num_ratio = ratio.into();
+                    let ratio_rounded = <$core_ty>::trunc_scalar(core_num_ratio);
                     ratio_rounded.into()
+                }
+
+                fn int_ratio(self, other: Self) -> Self::Scalar {
+                    Self::trunc_scalar(self / other)
                 }
             }
         )+};
@@ -441,10 +455,10 @@ mod impls {
             ];
 
             for (&input, exp) in inputs.iter().zip(expected) {
-                let result = <f64 as IntDiv>::round_to_int(input);
+                let result = <f64 as LinearIntRatio>::trunc_scalar(input);
                 assert!(
                     (result == exp) || (result.is_nan() && exp.is_nan()),
-                    "f64::round_to_int({input}) = {result}, expected {exp}",
+                    "f64::trunc_scalar({input}) = {result}, expected {exp}",
                 );
             }
         }
@@ -485,10 +499,10 @@ mod impls {
             ];
 
             for (&input, exp) in inputs.iter().zip(expected) {
-                let result = <f32 as IntDiv>::round_to_int(input);
+                let result = <f32 as LinearIntRatio>::trunc_scalar(input);
                 assert!(
                     (result == exp) || (result.is_nan() && exp.is_nan()),
-                    "f32::round_to_int({input}) = {result}, expected {exp}",
+                    "f32::trunc_scalar({input}) = {result}, expected {exp}",
                 );
             }
         }

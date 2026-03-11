@@ -3,7 +3,7 @@ use core::cmp::Ordering;
 use crate::{
     bounds::Endpoint,
     helper::{OneOrPair, ValOrInf},
-    traits::{IntDiv, Linear, MonotonicMeasure},
+    traits::{LinearIntRatio, MonotonicMeasure},
 };
 
 use super::{super::super::DiscreteOrdSet, LinearSpace};
@@ -29,7 +29,7 @@ where
 
     fn max_value(&self) -> Option<ValOrInf<T>>
     where
-        T: Linear + IntDiv<Output = <T as Linear>::Scalar>,
+        T: LinearIntRatio,
     {
         let min = self.min_value()?;
         let (lower, upper) = self.bounds().as_ref_bounds().ok()?;
@@ -70,7 +70,7 @@ where
 
 impl<T> DiscreteOrdSet for LinearSpace<T>
 where
-    T: PartialOrd + Clone + Linear + MonotonicMeasure + IntDiv<Output = <T as Linear>::Scalar>,
+    T: PartialOrd + Clone + LinearIntRatio + MonotonicMeasure,
 {
     type Point = T;
 
@@ -230,7 +230,7 @@ enum Direction {
 
 fn find_stepped<T>(x: T, origin: T, step: &T) -> T
 where
-    T: Clone + PartialOrd + Linear + MonotonicMeasure + IntDiv<Output = <T as Linear>::Scalar>,
+    T: Clone + PartialOrd + LinearIntRatio + MonotonicMeasure,
 {
     // try to reduce the number of possible steps
     // and the risk of possible over/under-flows
@@ -255,7 +255,7 @@ where
 /// when the operations to find the stepped point overflowed.
 fn find_stepped_inner<T>(x: T, origin: T, step: &T) -> Result<T, T>
 where
-    T: Clone + PartialOrd + Linear + MonotonicMeasure + IntDiv<Output = <T as Linear>::Scalar>,
+    T: Clone + PartialOrd + LinearIntRatio + MonotonicMeasure,
 {
     let direction = x > origin;
 
@@ -292,7 +292,7 @@ where
         }
     };
 
-    let no_steps = distance.int_div(step.clone());
+    let no_steps = distance.int_ratio(step.clone());
     let delta = step.clone().mul_scalar(no_steps);
     if direction {
         origin.clone().monotonic_add(delta).map(|mut x| {
