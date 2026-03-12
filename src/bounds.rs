@@ -373,7 +373,7 @@ where
 mod impls {
     use core::fmt;
 
-    use crate::{bounds::Endpoint, singleton::SingletonBounds, Interval};
+    use crate::{bounds::Endpoint, helper::StdError, singleton::SingletonBounds, Interval};
 
     use super::{BothBounds, Bounded, IntoBounds};
 
@@ -394,10 +394,7 @@ mod impls {
         }
     }
 
-    // https://blog.rust-lang.org/2024/09/05/Rust-1.81.0/#core-error-error
-    #[rustversion::since(1.81)]
-    #[allow(clippy::absolute_paths)]
-    impl<T: fmt::Debug + fmt::Display> core::error::Error for EmptyIntervalError<T> {}
+    impl<T: fmt::Debug + fmt::Display> StdError for EmptyIntervalError<T> {}
 
     impl<T> IntoBounds<T> for Interval<T>
     where

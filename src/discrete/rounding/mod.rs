@@ -6,7 +6,7 @@
 use core::fmt;
 
 use crate::{
-    helper::{minmax, OneOrPair},
+    helper::{minmax, OneOrPair, StdError},
     traits::Zero,
 };
 
@@ -198,6 +198,8 @@ where
         }
     }
 }
+
+impl<T> StdError for RoundError<T> where T: fmt::Debug + fmt::Display {}
 
 fn round<S, M, T>(
     space: &S,
