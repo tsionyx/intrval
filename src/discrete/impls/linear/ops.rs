@@ -53,8 +53,9 @@ where
     /// Scale the bounds and step size using some scalar value.
     ///
     /// # Returns
-    /// `None`, if the multiplier is a negative number,
-    /// thus producing an invalid `step` as a product.
+    ///
+    /// `None`, if the multiplier is a non-positive number,
+    ///  thus producing an invalid `step` as a product.
     fn mul(self, rhs: U) -> Self::Output {
         let (bounds, step) = self.into_parts();
 
@@ -77,12 +78,11 @@ where
     /// Scale the bounds and step size using some scalar value.
     ///
     /// # Returns
-    /// `None`:
-    /// - if the multiplier is a negative number,
-    ///   thus producing an invalid `step` as a product;
-    /// - if the `scalar` is zero, leading to division by zero.
+    ///
+    /// `None`, if the divisor is a non-positive number,
+    ///  thus producing an invalid `step` as a ratio.
     fn div(self, rhs: U) -> Self::Output {
-        if rhs.cmp_zero() == Some(Ordering::Equal) {
+        if rhs.cmp_zero() != Some(Ordering::Greater) {
             return None;
         }
 
@@ -99,8 +99,9 @@ where
     T: Mul<U, Output = Z>,
     Interval<T>: Mul<Interval<U>, Output = Interval<Z>>,
     D: Mul<V, Output = Y>,
+    Y: Zero,
 {
-    type Output = LinearSpace<Z, Y>;
+    type Output = Option<LinearSpace<Z, Y>>;
 
     /// Pairwise multiplies the bounds and step size of both spaces.
     fn mul(self, rhs: LinearSpace<U, V>) -> Self::Output {
@@ -109,10 +110,7 @@ where
 
         let step = step * rhs_step;
         let bounds = bounds * rhs_bounds;
-        // the existence of the two `LinearSpace` guarantees the validity (positiveness)
-        // of their `step`-s, so we can directly construct a new `LinearSpace`
-        // without checking the validity of the new (product) `step`.
-        LinearSpace::new_raw(bounds, step)
+        LinearSpace::try_bounded(bounds, step)
     }
 }
 
@@ -163,7 +161,7 @@ mod tests {
     fn mult_two_spaces() {
         let space1 = LinearSpace::try_bounded(interval!((8, =20)), 2).unwrap();
         let space2 = LinearSpace::try_bounded(interval!([5, 10]), 3).unwrap();
-        let prod = space1 * space2;
+        let prod = (space1 * space2).unwrap();
 
         assert_eq!(prod.bounds(), &Interval::LeftOpen((40, 200)));
         assert_eq!(prod.step(), &6);

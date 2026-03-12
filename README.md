@@ -283,7 +283,10 @@ assert_eq!((space / 3).unwrap().into_parts(), (interval!((6, =47)), 3));
 
 // `Mul` by another `LinearSpace`
 let space2 = LinearSpace::try_bounded(interval!([5, 10]), 3).unwrap();
-assert_eq!((space * space2).into_parts(), (interval!((100, =1420)), 30));
+assert_eq!(
+    (space * space2).unwrap().into_parts(),
+    (interval!((100, =1420)), 30)
+);
 ```
 
 
