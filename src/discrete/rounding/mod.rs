@@ -32,7 +32,7 @@ pub use self::modes::{DirectedMode, NearestMode};
 pub use self::rand::{Probability, RandomTie, StochasticMode};
 
 /// Extend the [`DiscreteOrdSet`] to support rounding.
-pub trait Roundable: DiscreteOrdSet
+pub trait Rounding: DiscreteOrdSet
 where
     Self::Point: Zero + Ord,
 {
@@ -43,12 +43,12 @@ where
     ///
     /// Performing a rounding with one of the [random-based modes][RoundingMode::is_stochastic]
     /// will use the fallback RNG for any random choices.
-    /// This is `no-std` friendly but provides low-quality
+    /// This is `no_std` friendly but provides low-quality
     /// and cryptographically insecure predetermined results.
     /// It is recommended to set the environment variable `CONST_RANDOM_SEED=<RANDOM_STRING>`
     /// at compile time (during `cargo build`) to get a better quality of randomness.
     ///
-    /// Also be aware that the fallback RNG is global and shared across all callers/threads.
+    /// Also be aware that the fallback RNG is global and shared across all callers/threads in `no_std` environment.
     /// That means stochastic rounding results depend on cross-thread interleaving
     /// and on prior uses elsewhere in the process, which can make behavior hard
     /// to reproduce and tests order-dependent. If you experience any difficulties with this,
@@ -83,12 +83,12 @@ where
     ///
     /// Performing a rounding with one of the [random-based modes][RoundingMode::is_stochastic]
     /// with `rng=None` will use the fallback [small rng][::rand::rngs::SmallRng] for any random choices.
-    /// This is `no-std` friendly but provides low-quality
+    /// This is `no_std` friendly but provides low-quality
     /// and cryptographically insecure predetermined results.
     /// It is recommended to set the environment variable `CONST_RANDOM_SEED=<RANDOM_STRING>`
     /// at compile time (during `cargo build`) to get a better quality of randomness.
     ///
-    /// Also be aware that the fallback RNG is global and shared across all callers/threads.
+    /// Also be aware that the fallback RNG is global and shared across all callers/threads in `no_std` environment.
     /// That means stochastic rounding results depend on cross-thread interleaving and on prior uses elsewhere in the process,
     /// which can make behavior hard to reproduce and tests order-dependent.
     /// If you experience any difficulties with this, consider providing your own RNG
@@ -126,7 +126,7 @@ where
     }
 }
 
-impl<S> Roundable for S
+impl<S> Rounding for S
 where
     S: DiscreteOrdSet,
     S::Point: Zero + Ord,
@@ -206,7 +206,7 @@ fn round<S, M, T>(
     rng: Option<&mut dyn RandRng>,
 ) -> Result<T, RoundError<T>>
 where
-    S: Roundable<Point = T> + ?Sized,
+    S: Rounding<Point = T> + ?Sized,
     T: Zero + Ord,
     M: RoundingMode<T>,
 {

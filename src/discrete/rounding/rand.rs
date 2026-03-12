@@ -172,7 +172,7 @@ mod fallback_rng {
             /// when no RNG is provided.
             ///
             /// This is a more stable variant when the `std` feature is enabled,
-            /// but it is not available in `no-std` environments.
+            /// but it is not available in `no_std` environments (due to absence of `thread_local!` macro and `RefCell`).
             static DEFAULT_RNG: RefCell<SmallRng> = RefCell::new(SmallRng::seed_from_u64(get_seed()));
         }
 
@@ -193,7 +193,7 @@ mod fallback_rng {
         /// A global (shared between threads) fallback RNG used for stochastic rounding
         /// when no RNG is provided.
         ///
-        /// This is a version for `no-std` environments,
+        /// This is a version for `no_std` environments,
         /// but it probably should be replaced with a more stable variant
         /// (enable the `std` feature for this).
         static DEFAULT_RNG: OnceLock<SmallRng> = OnceLock::new();

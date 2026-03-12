@@ -49,7 +49,7 @@ fn bad<T>(x: T, _reason: &str) -> Expected<T> {
 #[allow(clippy::needless_pass_by_value)]
 fn assert_rounding_cases<R, M, T>(space: &R, mode: M, tests: &[(T, Expected<T>)])
 where
-    R: Roundable<Point = T>,
+    R: Rounding<Point = T>,
     M: RoundingMode<T> + Debug + Clone,
     T: Zero + Ord + Debug,
 {

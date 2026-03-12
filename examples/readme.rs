@@ -300,11 +300,11 @@ fn discrete_iterators() {
     );
 }
 
-/// Round (using `Roundable` trait) a `point: T` to the values of the space.
+/// Round (using `Rounding` trait) a `point: T` to the values of the space.
 fn discrete_rounding() {
     use intrval::{
         discrete::{
-            rounding::{DirectedMode, NearestMode, RoundError, Roundable as _},
+            rounding::{DirectedMode, NearestMode, RoundError, Rounding as _},
             LinearSpace,
         },
         interval,
