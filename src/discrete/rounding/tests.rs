@@ -1021,6 +1021,29 @@ mod nearest {
     }
 }
 
+mod decimal {
+    use core::f64;
+
+    use rust_decimal::Decimal;
+
+    use super::{super::super::LinearRoundable, *};
+
+    #[test]
+    fn check_rounding() {
+        let x = Decimal::try_from(f64::consts::PI).unwrap();
+        let step = Decimal::try_from(0.03).unwrap();
+
+        assert_eq!(
+            LinearRoundable::round(&x, step, DirectedMode::DOWN).unwrap(),
+            Decimal::try_from(3.12).unwrap()
+        );
+        assert_eq!(
+            LinearRoundable::round(&x, step, DirectedMode::UP).unwrap(),
+            Decimal::try_from(3.15).unwrap()
+        );
+    }
+}
+
 #[cfg(feature = "random")]
 mod random_rounds {
     #[cfg(not(feature = "std"))]

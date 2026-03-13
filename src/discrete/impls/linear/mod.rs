@@ -162,14 +162,52 @@ where
 mod tests {
     use core::ops::Sub as _;
 
-    use crate::{impl_linear, impl_linear_int, impl_metric, impl_monotonic, impl_zero};
+    use ordered_float::OrderedFloat as OF;
+    use rust_decimal::Decimal;
 
-    type F32 = ordered_float::OrderedFloat<f32>;
-    type F64 = ordered_float::OrderedFloat<f64>;
+    use crate::{
+        impl_linear, impl_linear_int, impl_metric, impl_monotonic, impl_zero,
+        traits::{Linear as _, LinearIntRatio, Metric as _, MonotonicMeasure},
+    };
 
-    impl_zero!(using ordered_float::OrderedFloat(0.0) => F32, F64);
+    type F32 = OF<f32>;
+    type F64 = OF<f64>;
+
+    impl_zero!(using OF(0.0) => F32, F64);
     impl_metric!(using sub for F32, F64);
     impl_linear!(F32, F64);
     impl_linear_int!(F32 as f32, F64 as f64);
     impl_monotonic!(F32 as f32, F64 as f64);
+
+    impl_zero!(using Decimal::ZERO => Decimal);
+    impl_metric!(using sub for Decimal);
+    impl_linear!(Decimal);
+
+    impl LinearIntRatio for Decimal {
+        fn trunc_scalar(ratio: Self::Scalar) -> Option<Self::Scalar> {
+            Some(ratio.trunc())
+        }
+
+        fn int_ratio(self, other: Self) -> Option<Self::Scalar> {
+            self.get_ratio(other).and_then(Self::trunc_scalar)
+        }
+    }
+
+    impl MonotonicMeasure for Decimal {
+        fn monotonic_add(self, diff: Self::Distance) -> Option<Self> {
+            self.checked_add(diff)
+        }
+
+        fn monotonic_sub(self, diff: Self::Distance) -> Option<Self> {
+            self.checked_sub(diff)
+        }
+
+        fn checked_diff(self, rhs: Self) -> Option<Self::Distance> {
+            Some(self.distance(&rhs))
+        }
+
+        fn origin() -> Option<Self> {
+            Some(Self::ZERO)
+        }
+    }
 }
