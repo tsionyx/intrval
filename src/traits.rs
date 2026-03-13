@@ -43,7 +43,7 @@ pub trait Linear: Metric {
     fn mul_scalar(self, scalar: Self::Scalar) -> Self;
 
     /// Get a ratio of two values as a [Scalar][Self::Scalar] value.
-    fn get_ratio(self, rhs: Self) -> Self::Scalar;
+    fn get_ratio(self, rhs: Self) -> Option<Self::Scalar>;
 }
 
 /// Extend a [`Linear`] with integer ratio.
@@ -53,13 +53,29 @@ pub trait LinearIntRatio: Linear {
     /// The actual direction of the rounding is irrelevant, since the rounding algorithm
     /// will adjust the value anyway. By convention it is better to use
     /// the truncation (rounding towards zero).
-    fn trunc_scalar(ratio: Self::Scalar) -> Self::Scalar;
+    fn trunc_scalar(ratio: Self::Scalar) -> Option<Self::Scalar>;
 
     /// Extension of the [`Linear::get_ratio`] method to get an integer ratio.
     ///
     /// Performs integer division by rounding the ratio to integer
     /// using the [`Self::trunc_scalar`] method.
-    fn int_ratio(self, other: Self) -> Self::Scalar;
+    fn int_ratio(self, other: Self) -> Option<Self::Scalar>;
+
+    #[must_use]
+    /// Quantize the value to one of the nearest multiple of `step`
+    /// (usually truncating `self` towards zero,
+    /// see the corresponding [`Self::int_ratio`] implementation).
+    fn quantize(self, step: Self) -> Self
+    where
+        Self: Clone,
+    {
+        #![allow(clippy::option_if_let_else)]
+
+        match self.clone().int_ratio(step.clone()) {
+            Some(no_steps) => step.mul_scalar(no_steps),
+            None => self,
+        }
+    }
 }
 
 /// Extension of [linear types][Linear] with monotonic addition and subtraction.
@@ -180,8 +196,9 @@ mod impls {
                     self * scalar
                 }
 
-                fn get_ratio(self, rhs: Self) -> Self::Scalar {
-                    self / rhs
+                fn get_ratio(self, rhs: Self) -> Option<Self::Scalar> {
+                    <Self as $crate::Zero>::cmp_zero(&rhs)
+                        .and_then(|ord| ord.is_ne().then_some(self / rhs))
                 }
             }
         )+};
@@ -200,21 +217,21 @@ mod impls {
                 .map_or(Self::MAX, Self::from_nanos)
         }
 
-        fn get_ratio(self, rhs: Self) -> Self::Scalar {
+        fn get_ratio(self, rhs: Self) -> Option<Self::Scalar> {
             if rhs == Self::zero() {
-                Self::Scalar::MAX
+                None
             } else {
-                self.as_nanos() / rhs.as_nanos()
+                Some(self.as_nanos() / rhs.as_nanos())
             }
         }
     }
 
     impl LinearIntRatio for Duration {
-        fn trunc_scalar(ratio: Self::Scalar) -> Self::Scalar {
-            ratio
+        fn trunc_scalar(ratio: Self::Scalar) -> Option<Self::Scalar> {
+            Some(ratio)
         }
 
-        fn int_ratio(self, other: Self) -> Self::Scalar {
+        fn int_ratio(self, other: Self) -> Option<Self::Scalar> {
             self.get_ratio(other)
         }
     }
@@ -223,61 +240,44 @@ mod impls {
     macro_rules! impl_linear_int_for_int {
         ($($int:ty),+ $(,)?) => {$(
             impl LinearIntRatio for $int {
-                fn trunc_scalar(ratio: Self::Scalar) -> Self::Scalar { ratio }
-                fn int_ratio(self, other: Self) -> Self::Scalar { self / other }
+                fn trunc_scalar(ratio: Self::Scalar) -> Option<Self::Scalar> { Some(ratio) }
+                fn int_ratio(self, other: Self) ->  Option<Self::Scalar> { (other != 0).then_some(self / other) }
             }
         )+};
     }
     impl_linear_int_for_int!(i8, u8, i16, u16, i32, u32, i64, u64, isize, usize, i128, u128);
 
-    #[cfg(feature = "std")]
     /// Implement `LinearIntRatio` for floating-point types by truncating the ratio.
     ///
     /// # Note
     ///
-    /// - the `NaN` values will be treated as zero;
-    /// - infinite values are clamped to the representable finite range for this type;
-    ///   (i.e., `+inf` is clamped to `MAX` and `-inf` is clamped to `MIN`).
-    macro_rules! impl_linear_int_for_float {
-        ($($f:ty => $_int_ty:ty),+ $(,)?) => {$(
-            impl LinearIntRatio for $f {
-                fn trunc_scalar(ratio: Self::Scalar) -> Self::Scalar {
-                    #![allow(
-                        trivial_numeric_casts,
-                        clippy::as_conversions,
-                    )]
-                    if ratio.is_nan() {
-                        0.0 as Self::Scalar
-                    } else if ratio.is_infinite() {
-                        if ratio.is_sign_positive() {
-                            Self::Scalar::MAX
-                        } else {
-                            Self::Scalar::MIN
-                        }
-                    } else {
-                        ratio.trunc()
-                    }
-                }
-
-                fn int_ratio(self, other: Self) -> Self::Scalar {
-                    Self::trunc_scalar(self / other)
-                }
-            }
-        )+};
-    }
-
-    #[cfg(not(feature = "std"))]
-    /// Implement `LinearIntRatio` for floating-point types by truncating the ratio.
-    ///
-    /// # Note
-    ///
-    /// - the `NaN` values will be treated as zero;
+    /// - `NaN` values cause [`trunc_scalar`](LinearIntRatio::trunc_scalar) to return `None`;
     /// - infinite values are clamped to the representable finite range for this type;
     ///   (i.e., `+inf` is clamped to `MAX` and `-inf` is clamped to `MIN`).
     macro_rules! impl_linear_int_for_float {
         ($($f:ty => $int_ty:ty),+ $(,)?) => {$(
             impl LinearIntRatio for $f {
-                fn trunc_scalar(ratio: Self::Scalar) -> Self::Scalar {
+                #[cfg(feature = "std")]
+                fn trunc_scalar(ratio: Self::Scalar) -> Option<Self::Scalar> {
+                    #![allow(
+                        trivial_numeric_casts,
+                        clippy::as_conversions,
+                    )]
+                    (!ratio.is_nan()).then(|| {
+                        if ratio.is_infinite() {
+                            if ratio.is_sign_positive() {
+                                Self::Scalar::MAX
+                            } else {
+                                Self::Scalar::MIN
+                            }
+                        } else {
+                            ratio.trunc()
+                        }
+                    })
+                }
+
+                #[cfg(not(feature = "std"))]
+                fn trunc_scalar(ratio: Self::Scalar) -> Option<Self::Scalar> {
                     #![allow(
                         trivial_numeric_casts,
                         clippy::as_conversions,
@@ -285,9 +285,7 @@ mod impls {
                         clippy::cast_precision_loss,
                         clippy::cast_sign_loss,
                     )]
-                    if ratio.is_nan() {
-                        0.0 as Self::Scalar
-                    } else {
+                    (!ratio.is_nan()).then(|| {
                         // `f{32,64}.trunc()` is still unstable in `core` as of _Rust 1.93_
                         // (https://github.com/rust-lang/rust/issues/137578),
                         // so emulate it with casting to integer and back.
@@ -333,11 +331,15 @@ mod impls {
                         } else {
                             -truncated_abs
                         }
-                    }
+                    })
                 }
 
-                fn int_ratio(self, other: Self) -> Self::Scalar {
-                    Self::trunc_scalar(self / other)
+                fn int_ratio(self, other: Self) -> Option<Self::Scalar> {
+                    if other == 0.0 {
+                        None
+                    } else {
+                        Self::trunc_scalar(self / other)
+                    }
                 }
             }
         )+};
@@ -347,7 +349,7 @@ mod impls {
 
     #[macro_export]
     /// Helper macro to implement `LinearIntRatio` for numeric types
-    /// which ratio could be converted into/from core numeric types that
+    /// which ratio could be (fallibly) converted into/from core numeric types that
     /// already implement `LinearIntRatio`.
     ///
     /// The following underlying primitive types are now supported
@@ -362,19 +364,24 @@ mod impls {
     ///   - <https://crates.io/keywords/int>
     ///   - <https://crates.io/keywords/decimal>
     ///
-    /// The naive blanket impl approach `impl for T where T: Into<f64> + From<f64>`
+    /// The naive blanket impl approach `impl for T where T: TryInto<f64> + TryFrom<f64>`
     /// does not work due to orphan rule.
     macro_rules! impl_linear_int {
         ($($num_ty:ty as $core_ty:ty),+ $(,)?) => {$(
             impl $crate::LinearIntRatio for $num_ty {
-                fn trunc_scalar(ratio: Self::Scalar) -> Self::Scalar {
-                    let core_num_ratio = ratio.into();
-                    let ratio_rounded = <$core_ty>::trunc_scalar(core_num_ratio);
-                    ratio_rounded.into()
+                fn trunc_scalar(ratio: Self::Scalar) -> Option<Self::Scalar> {
+                    let core_num_ratio = ratio.try_into().ok()?;
+                    let ratio_rounded = <$core_ty>::trunc_scalar(core_num_ratio)?;
+                    ratio_rounded.try_into().ok()
                 }
 
-                fn int_ratio(self, other: Self) -> Self::Scalar {
-                    Self::trunc_scalar(self / other)
+                fn int_ratio(self, other: Self) -> Option<Self::Scalar> {
+                    <Self as $crate::Zero>::cmp_zero(&other)
+                        .and_then(|ord| if ord.is_eq() {
+                            None
+                        } else {
+                            Self::trunc_scalar(self / other)
+                        })
                 }
             }
         )+};
@@ -623,23 +630,23 @@ mod impls {
             let inputs = f64_inputs();
             let inf_repr = f64::MAX;
             let expected = [
-                -84785459459999193493494549584.0,
-                -123.0,
-                -0.0,
-                0.0,
-                8989898.0,
-                147326823945405434343.0,
-                inf_repr,
-                -inf_repr,
-                0.0,
-                0.0,
+                Some(-84785459459999193493494549584.0),
+                Some(-123.0),
+                Some(-0.0),
+                Some(0.0),
+                Some(8989898.0),
+                Some(147326823945405434343.0),
+                Some(inf_repr),
+                Some(-inf_repr),
+                None,
+                None,
             ];
 
             for (&input, exp) in inputs.iter().zip(expected) {
                 let result = <f64 as LinearIntRatio>::trunc_scalar(input);
-                assert!(
-                    (result == exp) || (result.is_nan() && exp.is_nan()),
-                    "f64::trunc_scalar({input}) = {result}, expected {exp}",
+                assert_eq!(
+                    result, exp,
+                    "f64::trunc_scalar({input}) = {result:?}, expected {exp:?}",
                 );
             }
         }
@@ -667,23 +674,23 @@ mod impls {
             ];
 
             let expected = [
-                -84785459459999193493494549584.0,
-                -123.0,
-                -0.0,
-                0.0,
-                8989898.0,
-                147326823945405434343.0,
-                inf_repr,
-                -inf_repr,
-                0.0,
-                0.0,
+                Some(-84785459459999193493494549584.0),
+                Some(-123.0),
+                Some(-0.0),
+                Some(0.0),
+                Some(8989898.0),
+                Some(147326823945405434343.0),
+                Some(inf_repr),
+                Some(-inf_repr),
+                None,
+                None,
             ];
 
             for (&input, exp) in inputs.iter().zip(expected) {
                 let result = <f32 as LinearIntRatio>::trunc_scalar(input);
-                assert!(
-                    (result == exp) || (result.is_nan() && exp.is_nan()),
-                    "f32::trunc_scalar({input}) = {result}, expected {exp}",
+                assert_eq!(
+                    result, exp,
+                    "f32::trunc_scalar({input}) = {result:?}, expected {exp:?}",
                 );
             }
         }

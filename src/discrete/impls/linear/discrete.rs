@@ -287,8 +287,7 @@ where
         }
     };
 
-    let no_steps = distance.int_ratio(step.clone());
-    let delta = step.clone().mul_scalar(no_steps);
+    let delta = distance.quantize(step.clone());
     if direction {
         origin.clone().monotonic_add(delta).map(|mut x| {
             for _ in 0..additional_steps {
