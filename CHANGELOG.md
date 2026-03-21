@@ -5,6 +5,84 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [Unreleased]
+
+## Added
+
+### feature="std"
+
+Main features:
+- impls of numeric traits for `std::time::SystemTime` enables rounding for it;
+- using `{f32,f64}::trunc()` instead of manual implementation;
+- using `thread_local!(RefCell)` for default RNG (with `random` feature).
+
+More:
+- unify `StdError` for all configurations
+  (either from `core` or from `std`, depending on Rust version);
+- reduce the number of property test cases in CI to 1000
+  (one more feature increases the power set of features twice);
+
+### rounding
+
+- `discrete::LinearRoundable` as an extension trait
+  for any _roundable_ `MonotonicMeasure` type.
+  It allows for inline creation of `LinearSpace` with no bounds
+  and round the value with it;
+- round `SystemTime` using `Duration` as a _distance_;
+- impl necessary rounding traits for `rust_decimal::Decimal`
+  to showcase in tests;
+
+
+## Changed
+
+### LinearSpace
+
+- make it generic over `T` (for interval points) and `D` (for distance between points);
+  - `LinearSpace::map` now accepts two separate mapping functions for `T` and `D`;
+- additional constraint `T: Zero` for `impl DiscreteOrdSet` to find origin point during rounding
+  (the `step` value was used before, as its type was the same `T`);
+- non-fallible constructors with `NonZero` (statically guaranteed positive)
+  step value as a wrapper around type `D`.
+
+
+Internal changes:
+- use `MonotonicMeasure::origin()` instead of `x - x` to find a rounded value of _zero_ for the type
+  later used as an anchor;
+- use the commutativeness of `checked_diff` to simplify `find_stepped` function;
+- use getter functions instead of direct fields' referencing;
+
+
+### Rounding supporting traits
+
+- rename:
+  - `Roundable` -> `Rounding`;
+  - `Measure` -> `Metric`;
+  - `IntDiv` -> `LinearIntRatio`;
+  - `MonotonicLinear` -> `MonotonicMeasure`;
+
+- simplify `impl RoundingMode` by using `Metric::distance`
+  instead of `for<'any> &'any T: ops::Sub`;
+
+- get rid of blanket impls (depending on some ops)
+  for `Zero`, `Linear`, `LinearIntRatio`;
+  - explicit methods `Linear::{mul_scalar(), get_ratio()}`;
+  - use (exported) macros instead to impl those traits for core numeric types;
+
+- new methods:
+  - `LinearIntRatio::quantize` combining `LinearIntRatio::int_ratio`
+    and `Linear::mul_scalar` to round a value to an integer number of steps;
+
+  - `MonotonicMeasure`:
+    - separate `monotonic_sub()` and `checked_diff()` (commutative one);
+    - `origin()` to optionally shortcut rounding;
+
+
+## Fixed
+
+- `impl Mul for LinearSpace` outputs an `Option<Self>`
+  because the product of steps could become non-positive;
+
+
 # [0.1.4] - 2026-02-26
 
 ## Added
@@ -79,7 +157,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `OneOrPair::{fold,single_or_fold}` to transform it into a value;
 - `ValOrInf` (isomorphic to `Option`) to extend an arbitrary type with the `Infinite` notion;
 - `slice_to_array_*` conversions to get an array `[T; N]` from the slice `&[T]`;
-- `OnceLock`, a very basic primitive for performing mutable operations on shared global data in `no-std` mode.
+- `OnceLock`, a very basic primitive for performing mutable operations on shared global data in `no_std` mode.
 
   The possible problems of using a global state behind this `OnceLock` include:
   1. No fairness guarantee: A thread spinning on the lock could starve other threads indefinitely.
@@ -155,7 +233,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `.enclosure(self, other: impl IntoBounds)`
       (return type changed: `Result<Self, (Self, R)>` -> `Self`);
     - `.is_disjoint(&self, other: impl IntoBounds<&T>)`
-      to check whether the two `Interval`-s are separated
+      to determine whether the two `Interval`-s are separated
       and could not be merged into a single one;
     - `.is_sub(&self, other: impl IntoBounds<&T>)` (reverse to `is_super`);
     - `.is_super(&self, other: impl IntoBounds<&T>)`
@@ -227,21 +305,21 @@ Represent a subset of single-dimensioned ordered set bounded by at most 2 points
 
 - set operations:
   - `complement` (aliased with `Not` (`!`) operator);
-  - `contains` to check whether the `Interval` contains a given point;
-  - `contains_other` to check whether another `Interval` is fully contained within `self`;
+  - `contains` to determine whether the `Interval` contains a given point;
+  - `contains_other` to check for full containment of another `Interval`;
   - via `Bounded` trait: 
     - `intersect` (aliased with `BitAnd` (`&`) operator);
     - `union` (aliased with `BitOr` (`|`) operator);
     - `enclosure`;
 
 - other methods:
-  - `is_empty` to check whether the `Interval` contains no points;
-  - `is_full` to check whether the `Interval` contains all possible points (_universe_);
+  - `is_empty` to determine whether the `Interval` contains no points;
+  - `is_full` to determine whether the `Interval` contains all possible points (_universe_);
   - `len` to get a measure of the `Interval` (as the `Size<Diff<T>>` type);
   - `clamp` to force the given point to fall into the `Interval`;
   
   - `as_ref` to represent the borrowed version `Interval<&T>`
-    (useful in many methods to avoid cloning doing `Interval::into_bounds`);
+    (useful in many methods to avoid cloning when doing `Interval::into_bounds`);
   - `map` to convert to another `Interval<U>` given transformation function
     `Fn(T) -> (U)`;
   - `reduce` to simplify the definition of an `Interval` to the equivalent one:

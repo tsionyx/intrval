@@ -388,9 +388,19 @@ assert_eq!(
 By default, all the features below are disabled to ensure minimalistic
 no-dependency library.
 
+### std
+
+Enables several improvements made thanks to including `std` library:
+- impls of numeric traits for `std::time::SystemTime` (useful in rounding);
+- using `{f32,f64}::trunc()` instead of manual implementation of it;
+- using `thread_local!(RefCell)` for default RNG (with `random` feature, see below).
+
+
 ### serde
 
-Enables the support of `serde::{Serialize, Deserialize}` for `Interval<T>`.
+Enables the support of `serde::{Serialize, Deserialize}` for `Interval<T>`
+and a variety of rounding modes.
+
 
 ### arbitrary
 
