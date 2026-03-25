@@ -303,11 +303,9 @@ fn discrete_iterators() {
 /// Round (using `Rounding` trait) a `point: T` to the values of the space.
 fn discrete_rounding() {
     use intrval::{
-        discrete::{
-            rounding::{DirectedMode, NearestMode, RoundError, Rounding as _},
-            LinearSpace,
-        },
+        discrete::LinearSpace,
         interval,
+        rounding::{DirectedMode, NearestMode, RoundError, Rounding as _},
     };
 
     let space = LinearSpace::try_bounded(interval!(> 100_u8), 4).unwrap();
@@ -328,7 +326,7 @@ fn discrete_rounding() {
 
     #[cfg(feature = "random")]
     {
-        use intrval::discrete::rounding::StochasticMode;
+        use intrval::rounding::StochasticMode;
         let rounded = space
             .round_with_rng(
                 &141,

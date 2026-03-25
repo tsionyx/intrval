@@ -1,10 +1,10 @@
 use core::fmt::Debug;
 
-use crate::interval;
+use crate::{discrete, interval};
 
 use super::*;
 
-type LinearSpace<T> = super::super::LinearSpace<T, T>;
+type LinearSpace<T> = discrete::LinearSpace<T, T>;
 
 fn half_open_multiples_of_3() -> LinearSpace<i32> {
     LinearSpace::try_bounded(interval!((-20, =40)), 3).unwrap()
@@ -1026,7 +1026,9 @@ mod decimal {
 
     use rust_decimal::Decimal;
 
-    use super::{super::super::LinearRoundable, *};
+    use crate::discrete::LinearRoundable;
+
+    use super::*;
 
     #[test]
     fn check_rounding() {
@@ -1243,7 +1245,9 @@ mod random_rounds {
 mod time {
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-    use super::{super::super::LinearRoundable as _, *};
+    use crate::discrete::LinearRoundable as _;
+
+    use super::*;
 
     /// Helper function to create a [`SystemTime`]
     /// at a specified number of seconds after [`UNIX_EPOCH`].

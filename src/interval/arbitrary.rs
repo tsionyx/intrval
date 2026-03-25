@@ -47,6 +47,10 @@ impl<T> Interval<T> {
         }
     }
 
+    #[cfg_attr(
+        not(feature = "singleton"),
+        allow(clippy::needless_pass_by_value, clippy::redundant_clone)
+    )]
     fn arbitrary_with_bounds_strategy(input: BoxedStrategy<T>) -> impl Strategy<Value = Self>
     where
         T: Debug + Clone + 'static,

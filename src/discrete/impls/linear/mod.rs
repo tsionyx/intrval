@@ -1,6 +1,14 @@
-use core::num::{NonZeroU128, NonZeroU16, NonZeroU32, NonZeroU64, NonZeroU8, NonZeroUsize};
+use core::{
+    fmt,
+    num::{NonZeroU128, NonZeroU16, NonZeroU32, NonZeroU64, NonZeroU8, NonZeroUsize},
+};
 
-use crate::{interval::Interval, traits::Zero};
+use crate::{
+    helper::StdError,
+    interval::Interval,
+    rounding::{RoundError, Rounding, RoundingMode},
+    traits::{LinearIntRatio, Metric, MonotonicMeasure, Zero},
+};
 
 mod discrete;
 pub mod iter;
@@ -156,6 +164,81 @@ where
     T: PartialOrd,
     D: Eq,
 {
+}
+
+/// Helper extension trait to ease rounding of any [`MonotonicMeasure`]
+/// using an _unbounded_ [`LinearSpace`].
+///
+/// For more advanced use cases consider creating the [`LinearSpace`] manually
+/// and use methods of [`Rounding`] trait directly.
+pub trait LinearRoundable: MonotonicMeasure {
+    /// Round a quantity linearly with the given `step`
+    /// using a provided [mode][RoundingMode].
+    ///
+    /// # Errors
+    /// - [`LinearRoundError::InvalidStep`] when the step
+    ///   cannot be used to create a valid [`LinearSpace`];
+    /// - [`LinearRoundError::Rounding`] if the underlying
+    ///   [`Rounding::round`] operation failed.
+    fn round(
+        &self,
+        step: Self::Distance,
+        mode: impl RoundingMode<Self>,
+    ) -> Result<Self, LinearRoundError<Self, Distance<Self>>>;
+}
+
+#[derive(Debug)]
+/// An error while using a [`LinearRoundable::round`].
+pub enum LinearRoundError<T, S> {
+    /// Cannot create a [`LinearSpace`] because the given `step` is invalid.
+    InvalidStep(S),
+    /// Underlying [`RoundError`] while doing [`Rounding::round`].
+    Rounding(RoundError<T>),
+}
+
+impl<T, S> fmt::Display for LinearRoundError<T, S>
+where
+    T: fmt::Display,
+    S: fmt::Display,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidStep(step) => {
+                write!(f, "The given step ")?;
+                step.fmt(f)?;
+                write!(f, " cannot be used to create a `LinearSpace`")
+            }
+            Self::Rounding(err) => {
+                write!(f, "Rounding::round failed: ")?;
+                err.fmt(f)
+            }
+        }
+    }
+}
+
+impl<T, S> StdError for LinearRoundError<T, S>
+where
+    T: fmt::Debug + fmt::Display,
+    S: fmt::Debug + fmt::Display,
+{
+}
+
+type Distance<T> = <T as Metric>::Distance;
+
+impl<T> LinearRoundable for T
+where
+    T: Clone + Ord + Zero + MonotonicMeasure,
+    Distance<T>: Clone + Zero + LinearIntRatio,
+{
+    fn round(
+        &self,
+        step: Distance<T>,
+        mode: impl RoundingMode<Self>,
+    ) -> Result<Self, LinearRoundError<Self, Distance<Self>>> {
+        let space =
+            LinearSpace::try_new(step.clone()).ok_or(LinearRoundError::InvalidStep(step))?;
+        Rounding::round(&space, self, mode).map_err(LinearRoundError::Rounding)
+    }
 }
 
 #[cfg(test)]

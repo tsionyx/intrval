@@ -83,6 +83,13 @@ Internal changes:
   because the product of steps could become non-positive;
 
 
+## Other
+
+- restructured the project files;
+  - move `discrete::rounding` module into top-level;
+  - move `Interval` specific implementation into `interval` submodule;
+
+
 # [0.1.4] - 2026-02-26
 
 ## Added

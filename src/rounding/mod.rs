@@ -6,11 +6,10 @@
 use core::fmt;
 
 use crate::{
+    discrete::DiscreteOrdSet,
     helper::{minmax, OneOrPair, StdError},
     traits::Zero,
 };
-
-use super::DiscreteOrdSet;
 
 mod modes;
 #[cfg(feature = "random")]
