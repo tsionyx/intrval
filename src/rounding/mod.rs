@@ -182,6 +182,21 @@ pub enum RoundError<T> {
     NoCandidates,
 }
 
+impl<T> RoundError<T> {
+    /// Fit a value inside the interval, i.e. ignore the failed [direction][DirectedMode].
+    ///
+    /// # Errors
+    ///
+    /// - `Err(self)` if the error is not an [invalid direction][RoundError::InvalidDirection] error.
+    pub fn fit(self) -> Result<T, Self> {
+        if let Self::InvalidDirection { rounded, .. } = self {
+            Ok(rounded)
+        } else {
+            Err(self)
+        }
+    }
+}
+
 impl<T> fmt::Display for RoundError<T>
 where
     T: fmt::Display,

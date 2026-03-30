@@ -76,6 +76,8 @@ Internal changes:
     - separate `monotonic_sub()` and `checked_diff()` (commutative one);
     - `origin()` to optionally shortcut rounding;
 
+  - `RoundError::fit` to use a rounded value even if it contradicts
+    the selected rounding direction;
 
 ## Fixed
 

@@ -51,7 +51,7 @@ fn assert_rounding_cases<R, M, T>(space: &R, mode: M, tests: &[(T, Expected<T>)]
 where
     R: Rounding<Point = T>,
     M: RoundingMode<T> + Debug + Clone,
-    T: Zero + Ord + Debug,
+    T: Zero + Ord + Debug + Clone,
 {
     for (input, expected) in tests {
         match expected {
@@ -64,10 +64,8 @@ where
             }
             Expected::Failure(failed) => {
                 let err = space.round(input, mode.clone()).unwrap_err();
-                assert!(
-                    matches!(err, RoundError::InvalidDirection {
-                    ref rounded, ..
-                } if rounded == failed),
+                assert_eq!(
+                    err.clone().fit().as_ref().unwrap(), failed,
                     "Rounding {input:?} with mode {mode:?} should fail with {failed:?}, got {err:?}"
                 );
             }
