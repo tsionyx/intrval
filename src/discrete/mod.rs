@@ -1,11 +1,12 @@
 //! Implementation of discrete intervals, i.e. intervals over types
 //! with discrete values (e.g. integers).
 mod impls;
-pub mod rounding;
 
 use crate::helper::{OneOrPair, ValOrInf};
 
-pub use self::impls::linear::{iter::It as LinearSpaceIter, LinearSpace};
+pub use self::impls::linear::{
+    iter::It as LinearSpaceIter, LinearRoundError, LinearRoundable, LinearSpace,
+};
 
 /// Trait representing a discrete set of ordered points.
 pub trait DiscreteOrdSet {

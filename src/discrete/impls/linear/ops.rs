@@ -14,7 +14,7 @@ use super::LinearSpace;
 // The implementation of `{Add, Sub}` are intentionally skipped because they have
 // richer semantics and could be assumed to also change the step size.
 
-impl<T> Shl<T> for LinearSpace<T>
+impl<T, D> Shl<T> for LinearSpace<T, D>
 where
     Interval<T>: Shl<T, Output = Interval<T>>,
 {
@@ -22,16 +22,12 @@ where
 
     /// Shift the linear space's bounds to the _left_ **without changing the step size**.
     fn shl(self, rhs: T) -> Self::Output {
-        let Self { bounds, step } = self;
-
-        Self {
-            bounds: bounds << rhs,
-            step,
-        }
+        let (bounds, step) = self.into_parts();
+        Self::new_raw(bounds << rhs, step)
     }
 }
 
-impl<T> Shr<T> for LinearSpace<T>
+impl<T, D> Shr<T> for LinearSpace<T, D>
 where
     Interval<T>: Shr<T, Output = Interval<T>>,
 {
@@ -39,31 +35,29 @@ where
 
     /// Shift the linear space's bounds to the _right_ **without changing the step size**.
     fn shr(self, rhs: T) -> Self::Output {
-        let Self { bounds, step } = self;
-
-        Self {
-            bounds: bounds >> rhs,
-            step,
-        }
+        let (bounds, step) = self.into_parts();
+        Self::new_raw(bounds >> rhs, step)
     }
 }
 
-impl<T, U, Z> Mul<U> for LinearSpace<T>
+impl<T, D, U, Y, Z> Mul<U> for LinearSpace<T, D>
 where
     T: Mul<U, Output = Z>,
     U: Clone,
     Interval<T>: Mul<U, Output = Interval<Z>>,
-    Z: Zero,
+    D: Mul<U, Output = Y>,
+    Y: Zero,
 {
-    type Output = Option<LinearSpace<Z>>;
+    type Output = Option<LinearSpace<Z, Y>>;
 
     /// Scale the bounds and step size using some scalar value.
     ///
     /// # Returns
-    /// `None`, if the multiplier is a negative number,
-    /// thus producing an invalid `step` as a product.
+    ///
+    /// `None`, if the multiplier is a non-positive number,
+    ///  thus producing an invalid `step` as a product.
     fn mul(self, rhs: U) -> Self::Output {
-        let Self { bounds, step } = self;
+        let (bounds, step) = self.into_parts();
 
         let step = step * rhs.clone();
         let bounds = bounds * rhs;
@@ -71,28 +65,28 @@ where
     }
 }
 
-impl<T, U, Z> Div<U> for LinearSpace<T>
+impl<T, D, U, Y, Z> Div<U> for LinearSpace<T, D>
 where
     T: Div<U, Output = Z>,
     U: Clone + Zero,
     Interval<T>: Div<U, Output = Interval<Z>>,
-    Z: Zero,
+    D: Div<U, Output = Y>,
+    Y: Zero,
 {
-    type Output = Option<LinearSpace<Z>>;
+    type Output = Option<LinearSpace<Z, Y>>;
 
     /// Scale the bounds and step size using some scalar value.
     ///
     /// # Returns
-    /// `None`:
-    /// - if the multiplier is a negative number,
-    ///   thus producing an invalid `step` as a product;
-    /// - if the `scalar` is zero, leading to division by zero.
+    ///
+    /// `None`, if the divisor is a non-positive number,
+    ///  thus producing an invalid `step` as a ratio.
     fn div(self, rhs: U) -> Self::Output {
-        if rhs.cmp_zero() == Some(Ordering::Equal) {
+        if rhs.cmp_zero() != Some(Ordering::Greater) {
             return None;
         }
 
-        let Self { bounds, step } = self;
+        let (bounds, step) = self.into_parts();
 
         let step = step / rhs.clone();
         let bounds = bounds / rhs;
@@ -100,27 +94,23 @@ where
     }
 }
 
-impl<T, U, Z> Mul<LinearSpace<U>> for LinearSpace<T>
+impl<T, D, U, V, Z, Y> Mul<LinearSpace<U, V>> for LinearSpace<T, D>
 where
     T: Mul<U, Output = Z>,
     Interval<T>: Mul<Interval<U>, Output = Interval<Z>>,
+    D: Mul<V, Output = Y>,
+    Y: Zero,
 {
-    type Output = LinearSpace<Z>;
+    type Output = Option<LinearSpace<Z, Y>>;
 
     /// Pairwise multiplies the bounds and step size of both spaces.
-    fn mul(self, rhs: LinearSpace<U>) -> Self::Output {
-        let Self { bounds, step } = self;
-        let LinearSpace {
-            bounds: rhs_bounds,
-            step: rhs_step,
-        } = rhs;
+    fn mul(self, rhs: LinearSpace<U, V>) -> Self::Output {
+        let (bounds, step) = self.into_parts();
+        let (rhs_bounds, rhs_step) = rhs.into_parts();
 
         let step = step * rhs_step;
         let bounds = bounds * rhs_bounds;
-        // the existence of the two `LinearSpace` guarantees the validity (positiveness)
-        // of their `step`-s, so we can directly construct a new `LinearSpace`
-        // without checking the validity of the new (product) `step`.
-        LinearSpace { bounds, step }
+        LinearSpace::try_bounded(bounds, step)
     }
 }
 
@@ -171,7 +161,7 @@ mod tests {
     fn mult_two_spaces() {
         let space1 = LinearSpace::try_bounded(interval!((8, =20)), 2).unwrap();
         let space2 = LinearSpace::try_bounded(interval!([5, 10]), 3).unwrap();
-        let prod = space1 * space2;
+        let prod = (space1 * space2).unwrap();
 
         assert_eq!(prod.bounds(), &Interval::LeftOpen((40, 200)));
         assert_eq!(prod.step(), &6);

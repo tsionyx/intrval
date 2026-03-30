@@ -1,26 +1,21 @@
 #![doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/README.md"))]
-#![no_std]
+#![cfg_attr(not(feature = "std"), no_std)]
 
-#[cfg(feature = "arbitrary")]
-mod arbitrary;
 pub(crate) mod bounds;
 pub mod discrete;
 pub(crate) mod helper;
 mod interval;
-mod ops;
+mod macros;
+pub mod rounding;
 mod set;
-pub(crate) mod singleton;
-mod str;
-mod traits;
+pub mod traits;
 
 #[cfg(feature = "arbitrary")]
-pub use self::arbitrary::BoundedInterval;
+pub use self::interval::arbitrary::BoundedInterval;
 
 pub use self::{
     bounds::{Bounded, EmptyIntervalError, Endpoint, IntoBounds},
     helper::{OneOrPair, Size, ValOrInf},
-    interval::Interval,
+    interval::{singleton, Interval},
     set::SetOps,
-    singleton::{Singleton, SingletonBounds},
-    traits::{IntDiv, Linear, Measure, MonotonicLinear, Zero},
 };

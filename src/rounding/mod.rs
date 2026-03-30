@@ -3,14 +3,13 @@
 //!
 //! <https://en.wikipedia.org/wiki/Rounding>
 
-use core::{fmt, ops::Sub};
+use core::fmt;
 
 use crate::{
-    helper::{minmax, OneOrPair},
+    discrete::DiscreteOrdSet,
+    helper::{minmax, OneOrPair, StdError},
     traits::Zero,
 };
-
-use super::DiscreteOrdSet;
 
 mod modes;
 #[cfg(feature = "random")]
@@ -32,7 +31,7 @@ pub use self::modes::{DirectedMode, NearestMode};
 pub use self::rand::{Probability, RandomTie, StochasticMode};
 
 /// Extend the [`DiscreteOrdSet`] to support rounding.
-pub trait Roundable: DiscreteOrdSet
+pub trait Rounding: DiscreteOrdSet
 where
     Self::Point: Zero + Ord,
 {
@@ -43,12 +42,12 @@ where
     ///
     /// Performing a rounding with one of the [random-based modes][RoundingMode::is_stochastic]
     /// will use the fallback RNG for any random choices.
-    /// This is `no-std` friendly but provides low-quality
+    /// This is `no_std` friendly but provides low-quality
     /// and cryptographically insecure predetermined results.
     /// It is recommended to set the environment variable `CONST_RANDOM_SEED=<RANDOM_STRING>`
     /// at compile time (during `cargo build`) to get a better quality of randomness.
     ///
-    /// Also be aware that the fallback RNG is global and shared across all callers/threads.
+    /// Also be aware that the fallback RNG is global and shared across all callers/threads in `no_std` environment.
     /// That means stochastic rounding results depend on cross-thread interleaving
     /// and on prior uses elsewhere in the process, which can make behavior hard
     /// to reproduce and tests order-dependent. If you experience any difficulties with this,
@@ -83,12 +82,12 @@ where
     ///
     /// Performing a rounding with one of the [random-based modes][RoundingMode::is_stochastic]
     /// with `rng=None` will use the fallback [small rng][::rand::rngs::SmallRng] for any random choices.
-    /// This is `no-std` friendly but provides low-quality
+    /// This is `no_std` friendly but provides low-quality
     /// and cryptographically insecure predetermined results.
     /// It is recommended to set the environment variable `CONST_RANDOM_SEED=<RANDOM_STRING>`
     /// at compile time (during `cargo build`) to get a better quality of randomness.
     ///
-    /// Also be aware that the fallback RNG is global and shared across all callers/threads.
+    /// Also be aware that the fallback RNG is global and shared across all callers/threads in `no_std` environment.
     /// That means stochastic rounding results depend on cross-thread interleaving and on prior uses elsewhere in the process,
     /// which can make behavior hard to reproduce and tests order-dependent.
     /// If you experience any difficulties with this, consider providing your own RNG
@@ -126,7 +125,7 @@ where
     }
 }
 
-impl<S> Roundable for S
+impl<S> Rounding for S
 where
     S: DiscreteOrdSet,
     S::Point: Zero + Ord,
@@ -183,6 +182,21 @@ pub enum RoundError<T> {
     NoCandidates,
 }
 
+impl<T> RoundError<T> {
+    /// Fit a value inside the interval, i.e. ignore the failed [direction][DirectedMode].
+    ///
+    /// # Errors
+    ///
+    /// - `Err(self)` if the error is not an [invalid direction][RoundError::InvalidDirection] error.
+    pub fn fit(self) -> Result<T, Self> {
+        if let Self::InvalidDirection { rounded, .. } = self {
+            Ok(rounded)
+        } else {
+            Err(self)
+        }
+    }
+}
+
 impl<T> fmt::Display for RoundError<T>
 where
     T: fmt::Display,
@@ -199,6 +213,8 @@ where
     }
 }
 
+impl<T> StdError for RoundError<T> where T: fmt::Debug + fmt::Display {}
+
 fn round<S, M, T>(
     space: &S,
     point: &T,
@@ -206,7 +222,7 @@ fn round<S, M, T>(
     rng: Option<&mut dyn RandRng>,
 ) -> Result<T, RoundError<T>>
 where
-    S: Roundable<Point = T> + ?Sized,
+    S: Rounding<Point = T> + ?Sized,
     T: Zero + Ord,
     M: RoundingMode<T>,
 {
@@ -236,16 +252,5 @@ where
             mode.round(point, OneOrPair::Pair((a, b)), rng)
         }
         single @ OneOrPair::One(_) => mode.round(point, single, rng),
-    }
-}
-
-fn distance<T, Diff>(x: T, y: T) -> Diff
-where
-    T: PartialOrd + Sub<Output = Diff>,
-{
-    if x >= y {
-        x - y
-    } else {
-        y - x
     }
 }

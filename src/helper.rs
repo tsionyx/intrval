@@ -2,6 +2,21 @@
 
 use crate::traits::Zero;
 
+// https://blog.rust-lang.org/2024/09/05/Rust-1.81.0/#core-error-error
+#[rustversion::since(1.81)]
+pub use core::error::Error as StdError;
+
+#[rustversion::before(1.81)]
+#[cfg(feature = "std")]
+pub use std::error::Error as StdError;
+
+#[rustversion::before(1.81)]
+#[cfg(not(feature = "std"))]
+/// Dummy trait representing a standard library's `error::Error`.
+///
+/// Enabled to support _no_std_ code before Rust 1.81 (where it was stabilized in `core`).
+pub trait StdError: core::fmt::Debug + core::fmt::Display {}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// Represent a length of the arbitrary interval.
 pub enum Size<T> {
@@ -175,6 +190,7 @@ impl<T> From<T> for ValOrInf<T> {
 }
 
 /// Synchronization primitives for internal use.
+#[cfg(not(feature = "std"))]
 pub mod sync {
     use core::{
         cell::UnsafeCell,

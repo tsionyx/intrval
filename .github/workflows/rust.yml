@@ -149,6 +149,10 @@ jobs:
     strategy:
       matrix:
         rust: ${{ fromJSON(needs.get-info.outputs.RUST_VERSIONS) }}
+
+    env:
+      PROPTEST_CASES: 1000
+
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2

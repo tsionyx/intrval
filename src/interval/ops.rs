@@ -11,7 +11,8 @@ use crate::{
     bounds::{inf_ordering, Bounded, Endpoint, IntoBounds, LBound, RBound, LEFT, RIGHT},
     helper::map_pair,
     set::SetOps,
-    Interval, OneOrPair, Zero,
+    traits::Zero,
+    Interval, OneOrPair,
 };
 
 impl<T> From<RangeFull> for Interval<T> {

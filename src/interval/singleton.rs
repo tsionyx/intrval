@@ -1,4 +1,5 @@
 //! Module to support singleton sets.
+//!
 //! It depends on the `singleton` feature flag, therefore
 //! the implementation is encapsulated in the separate module
 //! to allow conditional compilation.

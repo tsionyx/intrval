@@ -1,14 +1,12 @@
 //! Implementation details dependent on the `random` feature,
 //! which is used to support stochastic rounding.
 
-use core::ops::Sub;
-
 use crate::{
     helper::{OneOrPair, Pair},
-    traits::Zero,
+    traits::{Metric, Zero},
 };
 
-use super::{distance, modes::TieBreaking, RoundError, RoundingMode, TieSelection};
+use super::{modes::TieBreaking, RoundError, RoundingMode, TieSelection};
 
 pub use rand::RngCore as RandRng;
 
@@ -19,9 +17,8 @@ pub struct StochasticMode;
 
 impl<T> RoundingMode<T> for StochasticMode
 where
-    T: Zero + PartialOrd,
-    for<'any> &'any T: Sub,
-    for<'any> <&'any T as Sub>::Output: TryInto<f64>,
+    T: PartialOrd + Zero + Metric,
+    <T as Metric>::Distance: TryInto<f64>,
 {
     fn round(
         &self,
@@ -30,8 +27,8 @@ where
         rng: Option<&mut dyn RandRng>,
     ) -> Result<T, RoundError<T>> {
         Ok(nearest.single_or_fold(|nearest_lower, nearest_upper| {
-            let total: Option<f64> = distance(&nearest_upper, &nearest_lower).try_into().ok();
-            let to_lower: Option<f64> = distance(&nearest_lower, point).try_into().ok();
+            let total: Option<f64> = nearest_upper.distance(&nearest_lower).try_into().ok();
+            let to_lower: Option<f64> = point.distance(&nearest_lower).try_into().ok();
 
             // the closer (_less_ distance) to `lower`, the _lower_ the probability to pick `upper`
             //
@@ -163,33 +160,59 @@ pub fn bernoulli_sample(p: f64, rng: Option<&mut dyn RandRng>) -> bool {
 mod fallback_rng {
     use rand::{rngs::SmallRng, SeedableRng as _};
 
-    use crate::helper::{slice_to_array_or_default, sync::OnceLock};
+    pub use impl_global::with_default_rng;
 
-    /// A global fallback RNG used for stochastic rounding when no RNG is provided.
-    ///
-    /// This is a version for `no-std` environments,
-    /// but it probably should be replaced with a more stable variant if the `std` feature is enabled:
-    ///
-    /// ```no-compile
-    /// thread_local! {
-    ///     static DEFAULT_RNG: RefCell<StdRng> =
-    ///         RefCell::new(StdRng::seed_from_u64(get_seed()));
-    /// }
-    /// ```
-    static DEFAULT_RNG: OnceLock<SmallRng> = OnceLock::new();
+    #[cfg(feature = "std")]
+    mod impl_global {
+        use super::*;
+        use std::{cell::RefCell, thread_local};
 
-    pub fn with_default_rng<F, R>(f: F) -> R
-    where
-        F: FnOnce(&mut SmallRng) -> R,
-        R: 'static,
-    {
-        DEFAULT_RNG.with_mut_spin_lock(f, || {
-            let seed = get_seed();
-            SmallRng::seed_from_u64(seed)
-        })
+        thread_local! {
+            /// A global (per-thread) fallback RNG used for stochastic rounding
+            /// when no RNG is provided.
+            ///
+            /// This is a more stable variant when the `std` feature is enabled,
+            /// but it is not available in `no_std` environments (due to absence of `thread_local!` macro and `RefCell`).
+            static DEFAULT_RNG: RefCell<SmallRng> = RefCell::new(SmallRng::seed_from_u64(get_seed()));
+        }
+
+        pub fn with_default_rng<F, R>(f: F) -> R
+        where
+            F: FnOnce(&mut SmallRng) -> R,
+            R: 'static,
+        {
+            DEFAULT_RNG.with(|cell| f(&mut cell.borrow_mut()))
+        }
+    }
+
+    #[cfg(not(feature = "std"))]
+    mod impl_global {
+        use super::*;
+        use crate::helper::sync::OnceLock;
+
+        /// A global (shared between threads) fallback RNG used for stochastic rounding
+        /// when no RNG is provided.
+        ///
+        /// This is a version for `no_std` environments,
+        /// but it probably should be replaced with a more stable variant
+        /// (enable the `std` feature for this).
+        static DEFAULT_RNG: OnceLock<SmallRng> = OnceLock::new();
+
+        pub fn with_default_rng<F, R>(f: F) -> R
+        where
+            F: FnOnce(&mut SmallRng) -> R,
+            R: 'static,
+        {
+            DEFAULT_RNG.with_mut_spin_lock(f, || {
+                let seed = get_seed();
+                SmallRng::seed_from_u64(seed)
+            })
+        }
     }
 
     fn get_seed() -> u64 {
+        use crate::helper::slice_to_array_or_default;
+
         // inspired by https://github.com/tkaitchuck/constrandom/
         option_env!("CONST_RANDOM_SEED")
             .map(|value| u64::from_le_bytes(slice_to_array_or_default(value.as_bytes())))

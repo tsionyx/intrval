@@ -1,8 +1,10 @@
 use core::fmt::Debug;
 
-use crate::interval;
+use crate::{discrete, interval};
 
-use super::{super::LinearSpace, *};
+use super::*;
+
+type LinearSpace<T> = discrete::LinearSpace<T, T>;
 
 fn half_open_multiples_of_3() -> LinearSpace<i32> {
     LinearSpace::try_bounded(interval!((-20, =40)), 3).unwrap()
@@ -47,9 +49,9 @@ fn bad<T>(x: T, _reason: &str) -> Expected<T> {
 #[allow(clippy::needless_pass_by_value)]
 fn assert_rounding_cases<R, M, T>(space: &R, mode: M, tests: &[(T, Expected<T>)])
 where
-    R: Roundable<Point = T>,
+    R: Rounding<Point = T>,
     M: RoundingMode<T> + Debug + Clone,
-    T: Zero + Ord + Debug,
+    T: Zero + Ord + Debug + Clone,
 {
     for (input, expected) in tests {
         match expected {
@@ -62,10 +64,8 @@ where
             }
             Expected::Failure(failed) => {
                 let err = space.round(input, mode.clone()).unwrap_err();
-                assert!(
-                    matches!(err, RoundError::InvalidDirection {
-                    ref rounded, ..
-                } if rounded == failed),
+                assert_eq!(
+                    err.clone().fit().as_ref().unwrap(), failed,
                     "Rounding {input:?} with mode {mode:?} should fail with {failed:?}, got {err:?}"
                 );
             }
@@ -1019,8 +1019,34 @@ mod nearest {
     }
 }
 
+mod decimal {
+    use core::f64;
+
+    use rust_decimal::Decimal;
+
+    use crate::discrete::LinearRoundable;
+
+    use super::*;
+
+    #[test]
+    fn check_rounding() {
+        let x = Decimal::try_from(f64::consts::PI).unwrap();
+        let step = Decimal::try_from(0.03).unwrap();
+
+        assert_eq!(
+            LinearRoundable::round(&x, step, DirectedMode::DOWN).unwrap(),
+            Decimal::try_from(3.12).unwrap()
+        );
+        assert_eq!(
+            LinearRoundable::round(&x, step, DirectedMode::UP).unwrap(),
+            Decimal::try_from(3.15).unwrap()
+        );
+    }
+}
+
 #[cfg(feature = "random")]
 mod random_rounds {
+    #[cfg(not(feature = "std"))]
     extern crate std;
     use std::collections::HashMap;
 
@@ -1210,5 +1236,87 @@ mod random_rounds {
             assert_eq!(mode.round(&9.0, (9.0, 10.0).into(), None).unwrap(), 9.0);
             assert_eq!(mode.round(&10.0, (10.0, 10.0).into(), None).unwrap(), 10.0);
         }
+    }
+}
+
+#[cfg(feature = "std")]
+mod time {
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+    use crate::discrete::LinearRoundable as _;
+
+    use super::*;
+
+    /// Helper function to create a [`SystemTime`]
+    /// at a specified number of seconds after [`UNIX_EPOCH`].
+    fn time_at(seconds: u64) -> SystemTime {
+        UNIX_EPOCH + Duration::from_secs(seconds)
+    }
+
+    #[test]
+    fn system_time_round_with_step() {
+        // Time at 2023-07-15 10:30:45 UTC
+        let time = time_at(1_689_417_045);
+
+        // Round to nearest 15 minutes
+        let step = Duration::from_secs(60 * 15);
+
+        // Down/ToZero: should round to 10:30:00
+        let rounded = time.round(step, DirectedMode::FLOOR).unwrap();
+        let expected = time_at(1_689_417_000); // 10:30:00
+        assert_eq!(rounded, expected, "Floor rounding failed");
+        assert_eq!(
+            rounded,
+            time.round(step, DirectedMode::TowardZero).unwrap(),
+            "TowardZero rounding failed"
+        );
+
+        // Up: should round to 10:45:00
+        let rounded = time.round(step, DirectedMode::CEILING).unwrap();
+        let expected = time_at(1_689_417_900); // 10:45:00
+        assert_eq!(rounded, expected, "Up rounding failed");
+
+        // Nearest: should round to 10:30:00 (45s is closer to 30m than 45m)
+        let rounded = time
+            .round(step, NearestMode(DirectedMode::TRUNCATE))
+            .unwrap();
+        let expected = time_at(1_689_417_000); // 10:30:00
+        assert_eq!(rounded, expected, "Nearest rounding failed");
+
+        // Test with a different time where nearest should round up
+        // Time at 2023-07-15 10:37:30 UTC (closer to 10:45:00 than to 10:30:00)
+        let time_middle = time + Duration::from_secs(7 * 60 - 15); // 10:37:30
+        let rounded = time_middle
+            .round(step, NearestMode(DirectedMode::CEILING))
+            .unwrap();
+        let expected = time_at(1_689_417_900); // 10:45:00
+        assert_eq!(
+            expected.duration_since(time_middle).unwrap(),
+            Duration::from_secs(7 * 60 + 30)
+        );
+        assert_eq!(rounded, expected, "Nearest rounding (up) failed");
+
+        let rounded = time_middle
+            .round(step, NearestMode(DirectedMode::FLOOR))
+            .unwrap();
+        let expected = time_at(1_689_417_000); // 10:30:00
+        assert_eq!(
+            time_middle.duration_since(expected).unwrap(),
+            Duration::from_secs(7 * 60 + 30)
+        );
+        assert_eq!(rounded, expected, "Nearest rounding (down) failed");
+
+        // Test with a different time where nearest should round down
+        // Time at 2023-07-15 10:37:29 UTC (closer to 10:30:00 than to 10:45:00)
+        let time_middle = time_middle - Duration::from_secs(1); // 10:37:29
+        let rounded = time_middle
+            .round(step, NearestMode(DirectedMode::FLOOR))
+            .unwrap();
+        let expected = time_at(1_689_417_000); // 10:30:00
+        assert_eq!(
+            time_middle.duration_since(expected).unwrap(),
+            Duration::from_secs(7 * 60 + 29)
+        );
+        assert_eq!(rounded, expected, "Nearest rounding (down) failed");
     }
 }

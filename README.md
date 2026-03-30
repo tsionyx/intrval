@@ -237,6 +237,7 @@ represent discrete space of points.
 Create and deconstruct discrete intervals.
 
 ```rust
+# use core::convert::identity;
 # use intrval::{discrete::LinearSpace, interval};
 
 let space = LinearSpace::try_bounded(interval!([-2, 10]), 3_i8).unwrap();
@@ -244,19 +245,19 @@ assert_eq!(space.bounds(), &interval!([-2, 10]));
 assert_eq!(space.step(), &3);
 assert_eq!(space.into_parts(), (interval!([-2, 10]), 3));
 assert_eq!(
-    space.map(|x| x * 2).unwrap().into_parts(),
-    (interval!([-4, 20]), 6)
+    space.map(|x| x * 2, identity).unwrap().into_parts(),
+    (interval!([-4, 20]), 3)
 );
 
-let space = LinearSpace::try_new(10_i8).unwrap();
+let space = LinearSpace::<i8, i8>::try_new(10).unwrap();
 assert_eq!(space.bounds(), &interval!(U));
 assert_eq!(space.step(), &10);
 assert_eq!(space.into_parts(), (interval!(U), 10));
 assert_eq!(
-    space.map(|x| x + 2).unwrap().into_parts(),
+    space.map(|x| x + 2, |x| x + 2).unwrap().into_parts(),
     (interval!(U), 12)
 );
-assert!(space.map(|x| x - 10).is_none());
+assert!(space.map(identity, |x| x - 10).is_none());
 ```
 
 ### arithmetic operations
@@ -282,7 +283,10 @@ assert_eq!((space / 3).unwrap().into_parts(), (interval!((6, =47)), 3));
 
 // `Mul` by another `LinearSpace`
 let space2 = LinearSpace::try_bounded(interval!([5, 10]), 3).unwrap();
-assert_eq!((space * space2).into_parts(), (interval!((100, =1420)), 30));
+assert_eq!(
+    (space * space2).unwrap().into_parts(),
+    (interval!((100, =1420)), 30)
+);
 ```
 
 
@@ -293,7 +297,7 @@ Convert a space into forward and backward iterators.
 ```rust
 # use intrval::{discrete::LinearSpace, interval};
 
-let space = LinearSpace::try_bounded(interval!((20, =80)), 10_u16).unwrap();
+let space = LinearSpace::try_bounded(interval!((20_u16, =80)), 10).unwrap();
 assert_eq!(
     space.try_into_forward_iter().unwrap().collect::<Vec<_>>(),
     [30, 40, 50, 60, 70, 80]
@@ -303,7 +307,7 @@ assert_eq!(
     [70, 80]
 );
 
-let space_unbounded_lower = LinearSpace::try_bounded(interval!(<= 20), 5_u8).unwrap();
+let space_unbounded_lower = LinearSpace::try_bounded(interval!(<= 20_u16), 5).unwrap();
 let _err = space_unbounded_lower.try_into_forward_iter().unwrap_err();
 assert_eq!(
     space_unbounded_lower
@@ -321,7 +325,7 @@ assert_eq!(
     [40, 30]
 );
 
-let space_unbounded_upper = LinearSpace::try_bounded(interval!(> 100), 5_u8).unwrap();
+let space_unbounded_upper = LinearSpace::try_bounded(interval!(> 100_u8), 5).unwrap();
 let _err = space_unbounded_upper.try_into_backward_iter().unwrap_err();
 assert_eq!(
     space_unbounded_upper
@@ -333,18 +337,16 @@ assert_eq!(
 
 ### rounding
 
-Round (using `Roundable` trait) a `point: T` to the values of the space.
+Round (using `Rounding` trait) a `point: T` to the values of the space.
 
 ```rust
 # use intrval::{
-#     discrete::{
-#         rounding::{DirectedMode, NearestMode, RoundError, Roundable as _},
-#         LinearSpace,
-#     },
+#     discrete::LinearSpace,
 #     interval,
+#     rounding::{DirectedMode, NearestMode, RoundError, Rounding as _},
 # };
 
-let space = LinearSpace::try_bounded(interval!(> 100), 4_u8).unwrap();
+let space = LinearSpace::try_bounded(interval!(> 100_u8), 4).unwrap();
 
 assert_eq!(space.round(&102, DirectedMode::UP).unwrap(), 104);
 assert_eq!(space.round(&117, DirectedMode::DOWN).unwrap(), 116);
@@ -364,7 +366,7 @@ assert_eq!(
 
 #[cfg(feature = "random")]
 {
-    use intrval::discrete::rounding::StochasticMode;
+    use intrval::rounding::StochasticMode;
     let rounded = space
         .round_with_rng(
             &141,
@@ -384,9 +386,19 @@ assert_eq!(
 By default, all the features below are disabled to ensure minimalistic
 no-dependency library.
 
+### std
+
+Enables several improvements made thanks to including `std` library:
+- impls of numeric traits for `std::time::SystemTime` (useful in rounding);
+- using `{f32,f64}::trunc()` instead of manual implementation of it;
+- using `thread_local!(RefCell)` for default RNG (with `random` feature, see below).
+
+
 ### serde
 
-Enables the support of `serde::{Serialize, Deserialize}` for `Interval<T>`.
+Enables the support of `serde::{Serialize, Deserialize}` for `Interval<T>`
+and a variety of rounding modes.
+
 
 ### arbitrary
 
@@ -399,10 +411,10 @@ Enables the `proptest::Arbitrary` for `Interval<T>` along with the property test
 Enables the ability to use _stochastic_ rounding (`discrete::rounding::Mode::Stochastic`)
 and _random tie-breaking_ (in the `discrete::rounding::Mode::Nearest`).
 
-This feature also enables the `Roundable::round_with_rng`
+This feature also enables the `Rounding::round_with_rng`
 to be able to provide a custom RNG (random number generator implementing `rand::RngCore`).
-If you do not provide an RNG (either calling `Roundable::round_with_rng` with `None`
-or calling `Roundable::round`) using any of the modes mentioned above,
+If you do not provide an RNG (either calling `Rounding::round_with_rng` with `None`
+or calling `Rounding::round`) using any of the modes mentioned above,
 be aware that the default very simple RNG (`rand::SmallRng`) will be used.
 Its seed can be provided as a `CONST_RANDOM_SEED` environment variable **at compile time**
 (during `cargo build` or `cargo run`).

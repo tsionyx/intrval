@@ -11,6 +11,12 @@ use crate::{
     singleton::SingletonBounds,
 };
 
+#[cfg(feature = "arbitrary")]
+pub mod arbitrary;
+mod ops;
+pub mod singleton;
+mod str;
+
 #[derive(Debug, Copy, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "SCREAMING_SNAKE_CASE"))]
@@ -204,7 +210,7 @@ impl<T> Interval<T> {
     /// Reduce the [`Interval`] to its minimal form.
     ///
     /// ```
-    /// # use intrval::{Interval, Singleton as _};
+    /// # use intrval::{Interval, singleton::Singleton as _};
     /// assert_eq!(Interval::Open((5, 5)).reduce(), Interval::Empty);
     /// assert_eq!(Interval::Closed((5, 5)).reduce(), Interval::singleton(5));
     /// assert_eq!(Interval::Closed((7, 5)).reduce(), Interval::Empty);
@@ -374,7 +380,7 @@ impl<T> Interval<T> {
 /// Create an [`Interval`] using a concise syntax.
 ///
 /// ```
-/// # use intrval::{interval, Interval::{self, *}, Singleton as _};
+/// # use intrval::{interval, Interval::{self, *}, singleton::Singleton as _};
 ///
 /// assert_eq!(interval!(0), Empty::<i32>);
 /// assert_eq!(interval!(0: u8), Empty);
@@ -420,7 +426,7 @@ macro_rules! interval {
         $crate::interval!(== $x)
     };
     (== $x:expr) => {{
-        use $crate::Singleton as _;
+        use $crate::singleton::Singleton as _;
         $crate::Interval::singleton($x)
     }};
     ( ( $a:expr , $b:expr ) ) => {

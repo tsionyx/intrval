@@ -46,10 +46,13 @@ optional = true
 [dev-dependencies]
 serde_json = "1.0.140"
 ordered-float = { version = "5.0", default-features = false }
+rust_decimal = { version = "1.40", default-features = false }
 
 
 [features]
 default = []
+
+std = []
 
 # Could require some extra `Clone` bounds.
 # By default is disabled and emulated with `Interval::Closed((x, x))`.

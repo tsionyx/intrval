@@ -1,11 +1,11 @@
-use core::{cmp::Ordering, ops::Sub};
+use core::cmp::Ordering;
 
 use crate::{
     helper::{OneOrPair, Pair},
-    traits::Zero,
+    traits::{Metric, Zero},
 };
 
-use super::{distance, rand::RandRng, RoundError, RoundingMode, TieSelection};
+use super::{rand::RandRng, RoundError, RoundingMode, TieSelection};
 
 /// Directed rounding aims towards/away from a predetermined limit point.
 ///
@@ -105,9 +105,8 @@ impl DirectedMode {
 
 impl<T> RoundingMode<T> for DirectedMode
 where
-    T: Zero + PartialOrd,
-    for<'any> &'any T: Sub,
-    for<'any> <&'any T as Sub>::Output: PartialOrd,
+    T: PartialOrd + Zero + Metric,
+    <T as Metric>::Distance: PartialOrd,
 {
     fn round(
         &self,
@@ -187,9 +186,8 @@ mod serde_repr {
 impl<Tie, T> RoundingMode<T> for NearestMode<Tie>
 where
     Tie: TieBreaking<T>,
-    T: Zero + PartialOrd,
-    for<'any> &'any T: Sub,
-    for<'any> <&'any T as Sub>::Output: PartialOrd,
+    T: PartialOrd + Zero + Metric,
+    <T as Metric>::Distance: PartialOrd,
 {
     fn round(
         &self,
@@ -199,8 +197,8 @@ where
     ) -> Result<T, RoundError<T>> {
         let res = nearest.single_or_fold(|nearest_lower, nearest_upper| {
             let selection = {
-                let to_upper = distance(&nearest_upper, point);
-                let to_lower = distance(&nearest_lower, point);
+                let to_upper = nearest_upper.distance(point);
+                let to_lower = nearest_lower.distance(point);
                 match to_upper.partial_cmp(&to_lower) {
                     Some(Ordering::Less) => TieSelection::Right,
                     Some(Ordering::Greater) => TieSelection::Left,
@@ -248,9 +246,8 @@ pub(super) trait TieBreaking<T> {
 
 impl<T> TieBreaking<T> for DirectedMode
 where
-    T: Zero + PartialOrd,
-    for<'any> &'any T: Sub,
-    for<'any> <&'any T as Sub>::Output: PartialOrd,
+    T: PartialOrd + Zero + Metric,
+    <T as Metric>::Distance: PartialOrd,
 {
     /// Select which of the two values to pick based on its distance to zero.
     ///
@@ -265,8 +262,8 @@ where
         let zero = T::zero();
         match self {
             Self::TowardZero => {
-                let right_abs = distance(right, &zero);
-                let left_abs = distance(left, &zero);
+                let right_abs = right.distance(&zero);
+                let left_abs = left.distance(&zero);
                 match right_abs.partial_cmp(&left_abs) {
                     Some(Ordering::Greater) => Some(Left),
                     Some(Ordering::Less) => Some(Right),
@@ -274,8 +271,8 @@ where
                 }
             }
             Self::AwayFromZero => {
-                let right_abs = distance(right, &zero);
-                let left_abs = distance(left, &zero);
+                let right_abs = right.distance(&zero);
+                let left_abs = left.distance(&zero);
                 match right_abs.partial_cmp(&left_abs) {
                     Some(Ordering::Greater) => Some(Right),
                     Some(Ordering::Less) => Some(Left),
