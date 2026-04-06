@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # [Unreleased]
 
+## Added
+
+- `Endpoint::try_map` for fallible conversions;
+
+
 ## Changed
 
 - expose `bounds` as a public module and stop re-exporting its key items at the crate root.

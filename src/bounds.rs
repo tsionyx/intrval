@@ -202,6 +202,22 @@ impl<const SIDE: bool, T> Endpoint<SIDE, T> {
         }
     }
 
+    /// Fallibly convert the underlying value of the endpoint
+    /// preserving the inclusion/exclusion state.
+    ///
+    /// # Errors
+    /// Return `Err` if the provided conversion function `f` returns `Err`.
+    pub fn try_map<F, U, E>(self, f: F) -> Result<Endpoint<SIDE, U>, E>
+    where
+        F: FnOnce(T) -> Result<U, E>,
+    {
+        match self {
+            Self::Included(v) => f(v).map(Endpoint::Included),
+            Self::Excluded(v) => f(v).map(Endpoint::Excluded),
+            Self::Infinite => Ok(Endpoint::Infinite),
+        }
+    }
+
     /// Whether the endpoint is finite.
     pub const fn is_finite(&self) -> bool {
         matches!(self.as_ext_point(), ExtPoint::Finite(_))
@@ -654,5 +670,34 @@ mod tests {
         assert!(left(Included(100)) > right(Excluded(100)));
         assert!(left(Excluded(100)) > right(Included(100)));
         assert!(left(Excluded(100)) > right(Excluded(100)));
+    }
+
+    #[test]
+    fn try_map_preserves_finite_variants() {
+        let endpoint = LBound::Included(2_i32);
+        let mapped = endpoint.try_map(|v| Ok::<_, ()>(v * 3));
+        assert_eq!(mapped.unwrap(), LBound::Included(6));
+
+        let endpoint = RBound::Excluded(2_i32);
+        let mapped = endpoint.try_map(|v| Ok::<_, ()>(v + 5));
+        assert_eq!(mapped.unwrap(), RBound::Excluded(7));
+    }
+
+    #[test]
+    fn try_map_preserves_infinite_variant_without_calling_mapper() {
+        let endpoint = LBound::Infinite;
+        let mapped = endpoint.try_map(|_: i32| -> Result<i32, ()> { panic!("mapper called") });
+        assert_eq!(mapped.unwrap(), LBound::Infinite);
+    }
+
+    #[test]
+    fn try_map_propagates_errors() {
+        let included = RBound::Included(2_i32);
+        let included_err = included.try_map(|_| Err::<i32, _>("boom"));
+        assert_eq!(included_err.unwrap_err(), "boom");
+
+        let excluded = LBound::Excluded(3_i32);
+        let excluded_err = excluded.try_map(|_| Err::<i32, _>("boom"));
+        assert_eq!(excluded_err.unwrap_err(), "boom");
     }
 }
