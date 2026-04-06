@@ -22,13 +22,14 @@ pub trait Singleton<T> {
 
 // https://github.com/rust-lang/rust/releases/tag/1.79.0
 #[rustversion::attr(since(1.79), allow(unnameable_types))]
-/// Special trait to convert a value into [`Endpoint`][crate::Endpoint]-s representing a singleton interval.
+/// Special trait to convert a value into [`Endpoint`][crate::bounds::Endpoint]-s representing a singleton interval.
 ///
 /// This trait is only has a single method when the `singleton` feature is enabled.
 /// Otherwise it is an empty trait and implemented for `Interval<T>` by default.
 pub trait SingletonBounds<T> {
     #[cfg(feature = "singleton")]
-    /// Convert the given value into [`Endpoint`][crate::Endpoint]-s representing a singleton interval.
+    /// Convert the given value into [`Endpoint`][crate::bounds::Endpoint]-s
+    /// representing a singleton interval.
     fn value_into_bounds(x: T) -> BothBounds<T>;
 }
 

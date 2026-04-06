@@ -159,7 +159,7 @@ pub trait Bounded<T>: IntoBounds<T> {
 /// Get the [`Ordering`] representing
 /// comparison of infinity for the given side
 /// with any other finite value.
-pub const fn inf_ordering(side: bool) -> Ordering {
+pub(crate) const fn inf_ordering(side: bool) -> Ordering {
     #[allow(clippy::match_bool)]
     match side {
         LEFT => Ordering::Less,

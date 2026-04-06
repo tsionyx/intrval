@@ -760,7 +760,7 @@ mod prop_test {
                     if let Some(size) = size {
                         space.step() > &size
                     } else {
-                        use crate::IntoBounds as _;
+                        use crate::bounds::IntoBounds as _;
 
                         let (a, b) = bounds.into_bounds().unwrap();
                         let left_inf = (!a.is_finite()) &&
