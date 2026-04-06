@@ -225,6 +225,9 @@ where
 
 type Distance<T> = <T as Metric>::Distance;
 
+/// Type alias for the `LinearSpace` of values of type `T` with distance type `<T as Metric>::Distance`.
+pub type DiscreteInterval<T> = LinearSpace<T, Distance<T>>;
+
 impl<T> LinearRoundable for T
 where
     T: Clone + Ord + Zero + MonotonicMeasure,

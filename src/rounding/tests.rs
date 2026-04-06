@@ -1,21 +1,19 @@
 use core::fmt::Debug;
 
-use crate::{discrete, interval};
+use crate::{discrete::DiscreteInterval, interval};
 
 use super::*;
 
-type LinearSpace<T> = discrete::LinearSpace<T, T>;
-
-fn half_open_multiples_of_3() -> LinearSpace<i32> {
-    LinearSpace::try_bounded(interval!((-20, =40)), 3).unwrap()
+fn half_open_multiples_of_3() -> DiscreteInterval<i32> {
+    DiscreteInterval::try_bounded(interval!((-20, =40)), 3).unwrap()
 }
 
-fn half_unbounded_odd() -> LinearSpace<i32> {
-    LinearSpace::try_bounded(interval!(> 17), 2).unwrap()
+fn half_unbounded_odd() -> DiscreteInterval<i32> {
+    DiscreteInterval::try_bounded(interval!(> 17), 2).unwrap()
 }
 
-fn hundreds() -> LinearSpace<i32> {
-    LinearSpace::try_new(100).unwrap()
+fn hundreds() -> DiscreteInterval<i32> {
+    DiscreteInterval::try_new(100).unwrap()
 }
 
 type F64 = ordered_float::OrderedFloat<f64>;
@@ -24,12 +22,12 @@ const fn f(x: f64) -> F64 {
     ordered_float::OrderedFloat(x)
 }
 
-fn integer_floats() -> LinearSpace<F64> {
-    LinearSpace::try_new(f(1.0)).unwrap()
+fn integer_floats() -> DiscreteInterval<F64> {
+    DiscreteInterval::try_new(f(1.0)).unwrap()
 }
 
-fn half_open_halves() -> LinearSpace<F64> {
-    LinearSpace::try_bounded(interval!((=f(-42.0), f(13.55))), f(0.5)).unwrap()
+fn half_open_halves() -> DiscreteInterval<F64> {
+    DiscreteInterval::try_bounded(interval!((=f(-42.0), f(13.55))), f(0.5)).unwrap()
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -75,7 +73,7 @@ where
 
 #[test]
 fn directed_zero_rounding_with_excluded_zero_always_choose_upper_on_tie() {
-    let space = LinearSpace::try_bounded(interval!([-10, 10]), 4_i32).unwrap();
+    let space = DiscreteInterval::try_bounded(interval!([-10, 10]), 4_i32).unwrap();
 
     assert_rounding_cases(
         &space,
@@ -116,7 +114,7 @@ fn directed_zero_rounding_with_excluded_zero_always_choose_upper_on_tie() {
 
 #[test]
 fn directed_zero_rounding_with_odd_step() {
-    let space = LinearSpace::try_bounded(interval!([-10, 10]), 3_i32).unwrap();
+    let space = DiscreteInterval::try_bounded(interval!([-10, 10]), 3_i32).unwrap();
 
     assert_rounding_cases(
         &space,

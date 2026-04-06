@@ -11,11 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Added
 
 - `Endpoint::try_map` for fallible conversions;
+- `DiscreteInterval<T>` as an alias for commonly used `LinearSpace<T, <T as Metric>::Distance>`;
 
 
 ## Changed
 
-- expose `bounds` as a public module and stop re-exporting its key items at the crate root.
+- expose `bounds` as a public module and stop re-exporting its key items at the crate root;
+- move the `impl Arbitrary for LinearSpace` from `#[cfg(test)]` into the main codebase;
 
 
 # [0.2.0] - 2026-03-30
