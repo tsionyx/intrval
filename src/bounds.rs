@@ -569,7 +569,7 @@ mod tests {
     #[test]
     fn unbounded_infimum() {
         use Bound::{Excluded, Included, Unbounded};
-        assert!(left(Unbounded) == left(Unbounded));
+        assert_eq!(left(Unbounded), left(Unbounded));
         assert!(left(Unbounded) < left(Included(i32::MIN)));
         assert!(left(Unbounded) < left(Excluded(i32::MIN)));
         assert!(left(Unbounded) < left(Included(0)));
@@ -610,7 +610,7 @@ mod tests {
     #[test]
     fn unbounded_supremum() {
         use Bound::{Excluded, Included, Unbounded};
-        assert!(right(Unbounded) == right(Unbounded));
+        assert_eq!(right(Unbounded), right(Unbounded));
         assert!(right(Unbounded) > right(Included(i32::MIN)));
         assert!(right(Unbounded) > right(Excluded(i32::MIN)));
         assert!(right(Unbounded) > right(Included(0)));
@@ -666,7 +666,7 @@ mod tests {
         assert!(left(Included(-100)) < right(Included(100)));
         assert!(left(Included(-100)) < right(Included(0)));
 
-        assert!(left(Included(100)) == right(Included(100)));
+        assert_eq!(left(Included(100)), right(Included(100)));
         assert!(left(Included(100)) > right(Excluded(100)));
         assert!(left(Excluded(100)) > right(Included(100)));
         assert!(left(Excluded(100)) > right(Excluded(100)));
