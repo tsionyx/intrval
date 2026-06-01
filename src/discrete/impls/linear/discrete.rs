@@ -361,14 +361,15 @@ mod tests {
     use crate::{interval, Interval};
 
     use super::{
+        super::DiscreteInterval,
         OneOrPair::{One as I, Pair as P},
         *,
     };
 
     type Int = i16;
 
-    fn even_numbers_space(bounds: Interval<Int>) -> LinearSpace<Int, Int> {
-        LinearSpace::try_bounded(bounds, 2).unwrap()
+    fn even_numbers_space(bounds: Interval<Int>) -> DiscreteInterval<Int> {
+        DiscreteInterval::try_bounded(bounds, 2).unwrap()
     }
 
     #[test]
@@ -634,13 +635,8 @@ mod tests {
     }
 }
 
-#[cfg(all(test, feature = "arbitrary"))]
-mod prop_test {
-    extern crate alloc;
-
-    #[allow(unused_imports)] // will be used internally by `prop_assert` macros
-    use alloc::format;
-
+#[cfg(feature = "arbitrary")]
+mod impl_arbitrary {
     use proptest::{
         arbitrary::{ParamsFor, StrategyFor},
         prelude::*,
@@ -648,11 +644,9 @@ mod prop_test {
 
     use crate::Interval;
 
-    use super::*;
+    use super::{LinearSpace, Ordering, Zero};
 
-    type LinearSpace<T> = super::LinearSpace<T, T>;
-
-    impl<T, D> Arbitrary for super::LinearSpace<T, D>
+    impl<T, D> Arbitrary for LinearSpace<T, D>
     where
         T: Clone + Arbitrary + 'static,
         D: Arbitrary + Zero,
@@ -675,6 +669,18 @@ mod prop_test {
                 .boxed()
         }
     }
+}
+
+#[cfg(all(test, feature = "arbitrary"))]
+mod prop_test {
+    extern crate alloc;
+
+    #[allow(unused_imports)] // will be used internally by `prop_assert` macros
+    use alloc::format;
+
+    use proptest::prelude::*;
+
+    use super::{super::DiscreteInterval, *};
 
     // TODO: check for `ordered_float::OrderedFloat<f32>`
     type Int = i8;
@@ -684,7 +690,7 @@ mod prop_test {
         #![proptest_config(ProptestConfig::with_cases(8000))]
 
         #[test]
-        fn does_not_panic(space: LinearSpace<Int>, point: Int) {
+        fn does_not_panic(space: DiscreteInterval<Int>, point: Int) {
             let _ = space.get_min();
             let _ = space.get_max();
             let _ = space.get_nearest(&point);
@@ -693,7 +699,7 @@ mod prop_test {
         }
 
         #[test]
-        fn having_min_or_max_equiv_non_empty(space: LinearSpace<Int>) {
+        fn having_min_or_max_equiv_non_empty(space: DiscreteInterval<Int>) {
             let min = space.get_min();
             prop_assert_eq!(min.is_none(), space.is_empty());
 
@@ -702,7 +708,7 @@ mod prop_test {
         }
 
         #[test]
-        fn having_min_equiv_having_max(space: LinearSpace<Int>) {
+        fn having_min_equiv_having_max(space: DiscreteInterval<Int>) {
             let max = space.get_max();
             if let Some(min) = space.get_min() {
                 let max = max.unwrap();
@@ -716,13 +722,13 @@ mod prop_test {
         }
 
         #[test]
-        fn having_nearest_equiv_non_empty(space: LinearSpace<Int>, point: Int) {
+        fn having_nearest_equiv_non_empty(space: DiscreteInterval<Int>, point: Int) {
             let nearest = space.get_nearest(&point);
             prop_assert_eq!(nearest.is_none(), space.is_empty());
         }
 
         #[test]
-        fn nearest_always_contained(space: LinearSpace<Int>, point: Int) {
+        fn nearest_always_contained(space: DiscreteInterval<Int>, point: Int) {
             let nearest = space.get_nearest(&point);
             if let Some(nearest) = nearest {
                 match nearest {
@@ -736,7 +742,7 @@ mod prop_test {
         }
 
         #[test]
-        fn next_and_prev_always_contained(space: LinearSpace<Int>, point: Int) {
+        fn next_and_prev_always_contained(space: DiscreteInterval<Int>, point: Int) {
             if let Some(next) = space.get_next(&point) {
                 prop_assert!(space.contains(&next));
             }
@@ -746,7 +752,7 @@ mod prop_test {
         }
 
         #[test]
-        fn empty_is_either_empty_bounds_or_large_step_or_open(space in any::<LinearSpace<Int>>()
+        fn empty_is_either_empty_bounds_or_large_step_or_open(space in any::<DiscreteInterval<Int>>()
             .prop_filter("select empty spaces only", LinearSpace::is_empty)) {
                 let bounds = space.bounds().as_ref();
                 let size = bounds.len().into_diff();
@@ -760,7 +766,7 @@ mod prop_test {
                     if let Some(size) = size {
                         space.step() > &size
                     } else {
-                        use crate::IntoBounds as _;
+                        use crate::bounds::IntoBounds as _;
 
                         let (a, b) = bounds.into_bounds().unwrap();
                         let left_inf = (!a.is_finite()) &&
@@ -776,7 +782,7 @@ mod prop_test {
         }
 
         #[test]
-        fn next_exists_when_non_empty_and_step_from_max(space in any::<LinearSpace<Int>>(), point: Int) {
+        fn next_exists_when_non_empty_and_step_from_max(space in any::<DiscreteInterval<Int>>(), point: Int) {
             if let Some(max) = space.get_max() {
                 let min = space.get_min().unwrap();
                 if let Some(next) = space.get_next(&point) {
@@ -810,7 +816,7 @@ mod prop_test {
         }
 
         #[test]
-        fn prev_exists_when_non_empty_and_step_from_min(space in any::<LinearSpace<Int>>(), point: Int) {
+        fn prev_exists_when_non_empty_and_step_from_min(space in any::<DiscreteInterval<Int>>(), point: Int) {
             if let Some(min) = space.get_min() {
                 let max = space.get_max().unwrap();
                 if let Some(prev) = space.get_prev(&point) {

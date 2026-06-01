@@ -5,7 +5,7 @@ mod impls;
 use crate::helper::{OneOrPair, ValOrInf};
 
 pub use self::impls::linear::{
-    iter::It as LinearSpaceIter, LinearRoundError, LinearRoundable, LinearSpace,
+    iter::It as LinearSpaceIter, DiscreteInterval, LinearRoundError, LinearRoundable, LinearSpace,
 };
 
 /// Trait representing a discrete set of ordered points.

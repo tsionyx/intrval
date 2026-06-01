@@ -159,7 +159,7 @@ pub trait Bounded<T>: IntoBounds<T> {
 /// Get the [`Ordering`] representing
 /// comparison of infinity for the given side
 /// with any other finite value.
-pub const fn inf_ordering(side: bool) -> Ordering {
+pub(crate) const fn inf_ordering(side: bool) -> Ordering {
     #[allow(clippy::match_bool)]
     match side {
         LEFT => Ordering::Less,
@@ -199,6 +199,22 @@ impl<const SIDE: bool, T> Endpoint<SIDE, T> {
             Self::Included(v) => Endpoint::Included(f(v)),
             Self::Excluded(v) => Endpoint::Excluded(f(v)),
             Self::Infinite => Endpoint::Infinite,
+        }
+    }
+
+    /// Fallibly convert the underlying value of the endpoint
+    /// preserving the inclusion/exclusion state.
+    ///
+    /// # Errors
+    /// Return `Err` if the provided conversion function `f` returns `Err`.
+    pub fn try_map<F, U, E>(self, f: F) -> Result<Endpoint<SIDE, U>, E>
+    where
+        F: FnOnce(T) -> Result<U, E>,
+    {
+        match self {
+            Self::Included(v) => f(v).map(Endpoint::Included),
+            Self::Excluded(v) => f(v).map(Endpoint::Excluded),
+            Self::Infinite => Ok(Endpoint::Infinite),
         }
     }
 
@@ -553,7 +569,7 @@ mod tests {
     #[test]
     fn unbounded_infimum() {
         use Bound::{Excluded, Included, Unbounded};
-        assert!(left(Unbounded) == left(Unbounded));
+        assert_eq!(left(Unbounded), left(Unbounded));
         assert!(left(Unbounded) < left(Included(i32::MIN)));
         assert!(left(Unbounded) < left(Excluded(i32::MIN)));
         assert!(left(Unbounded) < left(Included(0)));
@@ -594,7 +610,7 @@ mod tests {
     #[test]
     fn unbounded_supremum() {
         use Bound::{Excluded, Included, Unbounded};
-        assert!(right(Unbounded) == right(Unbounded));
+        assert_eq!(right(Unbounded), right(Unbounded));
         assert!(right(Unbounded) > right(Included(i32::MIN)));
         assert!(right(Unbounded) > right(Excluded(i32::MIN)));
         assert!(right(Unbounded) > right(Included(0)));
@@ -650,9 +666,38 @@ mod tests {
         assert!(left(Included(-100)) < right(Included(100)));
         assert!(left(Included(-100)) < right(Included(0)));
 
-        assert!(left(Included(100)) == right(Included(100)));
+        assert_eq!(left(Included(100)), right(Included(100)));
         assert!(left(Included(100)) > right(Excluded(100)));
         assert!(left(Excluded(100)) > right(Included(100)));
         assert!(left(Excluded(100)) > right(Excluded(100)));
+    }
+
+    #[test]
+    fn try_map_preserves_finite_variants() {
+        let endpoint = LBound::Included(2_i32);
+        let mapped = endpoint.try_map(|v| Ok::<_, ()>(v * 3));
+        assert_eq!(mapped.unwrap(), LBound::Included(6));
+
+        let endpoint = RBound::Excluded(2_i32);
+        let mapped = endpoint.try_map(|v| Ok::<_, ()>(v + 5));
+        assert_eq!(mapped.unwrap(), RBound::Excluded(7));
+    }
+
+    #[test]
+    fn try_map_preserves_infinite_variant_without_calling_mapper() {
+        let endpoint = LBound::Infinite;
+        let mapped = endpoint.try_map(|_: i32| -> Result<i32, ()> { panic!("mapper called") });
+        assert_eq!(mapped.unwrap(), LBound::Infinite);
+    }
+
+    #[test]
+    fn try_map_propagates_errors() {
+        let included = RBound::Included(2_i32);
+        let included_err = included.try_map(|_| Err::<i32, _>("boom"));
+        assert_eq!(included_err.unwrap_err(), "boom");
+
+        let excluded = LBound::Excluded(3_i32);
+        let excluded_err = excluded.try_map(|_| Err::<i32, _>("boom"));
+        assert_eq!(excluded_err.unwrap_err(), "boom");
     }
 }
